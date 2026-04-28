@@ -1,1 +1,1 @@
-web: pip uninstall -y opencv-python && gunicorn app:app
+web: pip uninstall -y opencv-python && pip install opencv-python-headless && gunicorn app:app
