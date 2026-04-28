@@ -14,7 +14,7 @@ for f in csv_files:
         print(f"⚠️ Warning: Could not find {f}")
 
 if not dfs:
-    print("❌ Error: No CSV files found. Make sure they are in the same folder as this script.")
+    print("❌ Error: No CSV files found. Make sure they are uploaded to Railway.")
     exit()
 
 master_df = pd.concat(dfs, ignore_index=True)
@@ -35,10 +35,19 @@ master_df["time_idx"] = range(len(master_df))
 master_df["Branch"] = "Lipa" 
 
 print(f"✅ Data cleaned! Total weeks of history ready to insert: {len(master_df)}")
-print("💾 Connecting to Railway cloud database...")
+print("💾 Connecting to Railway cloud database internally...")
 
-# 5. Connect to your Railway PostgreSQL database
-db_url = "postgresql://postgres:AMUBJZqNFccEXkfDGdEJDuyXlmUPWdUy@caboose.proxy.rlwy.net:55551/railway?sslmode=disable"
+# 5. Get the DATABASE_URL securely from Railway's environment
+db_url = os.environ.get("DATABASE_URL")
+
+if not db_url:
+    print("❌ Error: DATABASE_URL environment variable not found!")
+    print("Make sure you are running this from the Railway Terminal.")
+    exit()
+
+# Fix prefix if necessary
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 
 try:
     conn = psycopg2.connect(db_url)
@@ -49,7 +58,7 @@ try:
         cursor.execute("DELETE FROM production_history")
     except psycopg2.errors.UndefinedTable:
         print("❌ Error: 'production_history' table not found.")
-        print("Please ensure your Railway app has successfully booted up at least once to create the tables.")
+        print("Make sure your web app has successfully booted up at least once to create the tables.")
         conn.close()
         exit()
 
@@ -59,7 +68,7 @@ try:
         # Create a clean week ID for historical records (e.g., Hist-W0, Hist-W1)
         historical_week_id = f"Hist-W{int(row['time_idx'])}"
         
-        # NOTE: PostgreSQL uses %s instead of ? for variable injection
+        # PostgreSQL uses %s instead of ? for variable injection
         cursor.execute('''
             INSERT INTO production_history 
             (time_idx, week_id, branch, month, event_name, sales_pcs, total_produced, net_usable_output, defect_rate)
