@@ -26,4 +26,4 @@ RUN pip install --no-cache-dir opencv-python-headless
 COPY . .
 
 # 7. Start Gunicorn using Railway's dynamic port system
-CMD gunicorn app:app --bind 0.0.0.0:$PORT
+CMD python seed_db.py && gunicorn app:app --bind 0.0.0.0:$PORT
