@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <h2 class="text-3xl font-display font-bold">Inspection Mode</h2>
+        
+        <div class="flex bg-bark-100 p-1 rounded-xl shadow-inner">
+            <button id="btn-camera" onclick="switchMode('camera')" class="px-6 py-2 rounded-lg text-sm font-bold bg-white text-bark-900 shadow-sm transition-all duration-300">
+                Camera Capture
+            </button>
+            <button id="btn-upload" onclick="switchMode('upload')" class="px-6 py-2 rounded-lg text-sm font-medium text-bark-600 hover:text-bark-900 transition-all duration-300">
+                Upload Photo
+            </button>
+        </div>
+    </div>
+    
+    <div id="camera-mode" class="block animate-fade-in">
+        <div class="flex justify-end mb-2">
+            <select id="cameraSelect" onchange="startCamera(this.value)" class="bg-white border border-bark-200 text-bark-900 text-xs rounded-lg focus:ring-leaf-500 focus:border-leaf-500 block p-1.5 shadow-sm outline-none cursor-pointer">
+                <option value="">Loading Cameras...</option>
+            </select>
+        </div>
+        
+        <div class="relative bg-black rounded-2xl overflow-hidden shadow-2xl aspect-video border border-bark-200 group flex items-center justify-center">
+            <video id="webcamVideo" autoplay playsinline class="w-full h-full object-cover"></video>
+            <img id="cameraResultImg" class="hidden absolute inset-0 w-full h-full object-contain bg-black" alt="YOLO Result">
+            <div class="absolute inset-0 border-4 border-leaf-500/20 rounded-2xl pointer-events-none"></div>
+            
+            <div id="cameraLoading" class="hidden absolute inset-0 bg-bark-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+                <svg class="animate-spin h-10 w-10 text-leaf-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span class="font-medium">Analyzing Quality...</span>
+            </div>
+
+            <div id="captureControls" class="absolute bottom-6 left-0 right-0 flex justify-center">
+                <button onclick="captureAndAnalyze()" class="bg-leaf-500 text-white px-6 py-3 rounded-full font-bold shadow-lg hover:bg-leaf-600 transition-all hover:scale-105 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    Capture & Analyze
+                </button>
+            </div>
+            
+            <div id="resetControls" class="hidden absolute bottom-6 left-0 right-0 flex justify-center">
+                <button onclick="resetCamera()" class="bg-white text-bark-900 px-6 py-3 rounded-full font-bold shadow-lg hover:bg-gray-100 transition-all flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Scan Another Batch
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="upload-mode" class="hidden animate-fade-in">
+        <div class="relative bg-white rounded-2xl overflow-hidden shadow-sm border-2 border-dashed border-bark-300 hover:border-leaf-500 aspect-video flex flex-col items-center justify-center transition-colors cursor-pointer group" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" class="hidden" accept="image/*" onchange="handleImageUpload(event)">
+            
+            <div id="uploadPlaceholder" class="text-center pointer-events-none">
+                <svg class="w-12 h-12 text-bark-400 mx-auto mb-3 group-hover:text-leaf-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                <p class="text-bark-900 font-bold text-lg">Click to upload an image</p>
+                <p class="text-sm text-bark-500 mt-1">Supports JPG, PNG</p>
+            </div>
+
+            <img id="uploadPreview" class="hidden absolute inset-0 w-full h-full object-contain bg-black" alt="Processed Image">
+            
+            <div id="uploadLoading" class="hidden absolute inset-0 bg-bark-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+                <svg class="animate-spin h-10 w-10 text-leaf-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span class="font-medium">Processing through YOLO...</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="review-section" class="hidden mt-6 bg-white p-6 rounded-2xl shadow-sm border border-bark-200 animate-fade-in">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="text-lg font-bold text-bark-900">Review Detected Quantities</h3>
+            <span class="text-sm text-bark-500">Edit any mistakes before saving.</span>
+        </div>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-semibold text-leaf-600 mb-1">Good Tablea</label>
+                <input type="number" id="rev-good" class="w-full rounded-lg border border-bark-200 py-2 px-3 text-center font-bold focus:ring-leaf-500 focus:border-leaf-500">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-red-500 mb-1">Cracked</label>
+                <input type="number" id="rev-crack" class="w-full rounded-lg border border-bark-200 py-2 px-3 text-center font-bold focus:ring-leaf-500 focus:border-leaf-500">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-yellow-500 mb-1">Fat Bloom</label>
+                <input type="number" id="rev-bloom" class="w-full rounded-lg border border-bark-200 py-2 px-3 text-center font-bold focus:ring-leaf-500 focus:border-leaf-500">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-bark-600 mb-1">Other Defect</label>
+                <input type="number" id="rev-defect" class="w-full rounded-lg border border-bark-200 py-2 px-3 text-center font-bold focus:ring-leaf-500 focus:border-leaf-500">
+            </div>
+        </div>
+        
+        <button onclick="confirmAndSave()" id="btn-save-log" class="mt-6 w-full bg-bark-900 hover:bg-bark-800 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition flex items-center justify-center gap-2">
+            <i class="fas fa-save"></i> Save to Database
+        </button>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4 mt-6">
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-100 text-center">
+            <div class="text-3xl font-bold text-leaf-500" id="stat-yield">--%</div>
+            <div class="text-sm text-bark-600 font-medium mt-1">Current Yield</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-100 text-center">
+            <div class="text-3xl font-bold" id="stat-total">--</div>
+            <div class="text-sm text-bark-600 font-medium mt-1">Total Scanned</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-100 text-center">
+            <div class="text-3xl font-bold text-red-500" id="stat-cracks">--%</div>
+            <div class="text-sm text-bark-600 font-medium mt-1">Crack Rate</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-100 text-center">
+            <div class="text-3xl font-bold text-yellow-500" id="stat-bloom">--%</div>
+            <div class="text-sm text-bark-600 font-medium mt-1">Fat Bloom Rate</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentStream = null;
+
+    // --- Toast Helper ---
+    function showToast(title, msg) {
+        const toast = document.getElementById('toast');
+        document.getElementById('toastTitle').innerText = title;
+        document.getElementById('toastMsg').innerText = msg;
+        document.getElementById('toastIcon').innerHTML = '<i class="fas fa-check-circle text-leaf-500 text-xl"></i>';
+        
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // --- 1. Toggle Mode ---
+    function switchMode(mode) {
+        document.getElementById('camera-mode').classList.toggle('hidden', mode !== 'camera');
+        document.getElementById('upload-mode').classList.toggle('hidden', mode !== 'upload');
+        document.getElementById('review-section').classList.add('hidden'); // Hide review on switch
+        
+        document.getElementById('btn-camera').className = mode === 'camera' ? "px-6 py-2 rounded-lg text-sm font-bold bg-white text-bark-900 shadow-sm transition-all duration-300" : "px-6 py-2 rounded-lg text-sm font-medium text-bark-600 hover:text-bark-900 transition-all duration-300";
+        document.getElementById('btn-upload').className = mode === 'upload' ? "px-6 py-2 rounded-lg text-sm font-bold bg-white text-bark-900 shadow-sm transition-all duration-300" : "px-6 py-2 rounded-lg text-sm font-medium text-bark-600 hover:text-bark-900 transition-all duration-300";
+
+        if (mode === 'camera') initCamera();
+        else stopCamera();
+    }
+
+    // --- 2. Camera Logic ---
+    async function initCamera() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            const select = document.getElementById('cameraSelect');
+            
+            select.innerHTML = '';
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `Camera ${index + 1}`;
+                select.appendChild(option);
+            });
+
+            if (videoDevices.length > 0) startCamera(videoDevices[0].deviceId);
+        } catch (err) {
+            console.error("Camera error:", err);
+        }
+    }
+
+    async function startCamera(deviceId) {
+        stopCamera();
+        const video = document.getElementById('webcamVideo');
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia({
+                video: deviceId ? { deviceId: { exact: deviceId } } : true
+            });
+            video.srcObject = currentStream;
+        } catch (err) {}
+    }
+
+    function stopCamera() {
+        if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+    }
+
+    function resetCamera() {
+        document.getElementById('cameraResultImg').classList.add('hidden');
+        document.getElementById('webcamVideo').classList.remove('hidden');
+        document.getElementById('resetControls').classList.add('hidden');
+        document.getElementById('captureControls').classList.remove('hidden');
+        document.getElementById('review-section').classList.add('hidden');
+    }
+
+    // --- 3. Capture & Analyze ---
+    function captureAndAnalyze() {
+        const video = document.getElementById('webcamVideo');
+        if (!video.videoWidth) return;
+
+        document.getElementById('captureControls').classList.add('hidden');
+        document.getElementById('cameraLoading').classList.remove('hidden');
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+
+        canvas.toBlob(blob => {
+            const formData = new FormData();
+            formData.append('file', blob, 'capture.jpg');
+            sendToYOLO(formData, 'camera');
+        }, 'image/jpeg', 0.9);
+    }
+
+    // --- 4. Upload Handler ---
+    function handleImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        document.getElementById('uploadPlaceholder').classList.add('hidden');
+        document.getElementById('uploadPreview').classList.add('hidden');
+        document.getElementById('uploadLoading').classList.remove('hidden');
+        document.getElementById('review-section').classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('file', file);
+        sendToYOLO(formData, 'upload');
+    }
+
+    // --- 5. Send to YOLO & POPULATE REVIEW UI ---
+    function sendToYOLO(formData, source) {
+        fetch('/upload_image', { method: 'POST', body: formData })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            // Show image based on mode
+            if (source === 'camera') {
+                document.getElementById('cameraLoading').classList.add('hidden');
+                const img = document.getElementById('cameraResultImg');
+                img.src = "data:image/jpeg;base64," + data.image;
+                img.classList.remove('hidden');
+                document.getElementById('webcamVideo').classList.add('hidden');
+                document.getElementById('resetControls').classList.remove('hidden');
+            } else {
+                document.getElementById('uploadLoading').classList.add('hidden');
+                const img = document.getElementById('uploadPreview');
+                img.src = "data:image/jpeg;base64," + data.image;
+                img.classList.remove('hidden');
+            }
+
+            // POPULATE THE REVIEW INPUTS
+            document.getElementById('rev-good').value = data.counts.good || 0;
+            document.getElementById('rev-crack').value = data.counts.crack || 0;
+            document.getElementById('rev-bloom').value = data.counts.fat_bloom || 0;
+            document.getElementById('rev-defect').value = data.counts.defect || 0;
+            
+            // SHOW THE REVIEW SECTION
+            document.getElementById('review-section').classList.remove('hidden');
+        })
+        .catch(error => console.error("Error:", error));
+    }
+
+    // --- 6. Confirm and Save to Database ---
+    function confirmAndSave() {
+        const btn = document.getElementById('btn-save-log');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Saving...';
+
+        const payload = {
+            good: document.getElementById('rev-good').value,
+            crack: document.getElementById('rev-crack').value,
+            fat_bloom: document.getElementById('rev-bloom').value,
+            defect: document.getElementById('rev-defect').value
+        };
+
+        fetch('/api/confirm_scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+                if (data.status === 'success') {
+                    // Optional: You can show a quick alert before refreshing
+                    // alert("Scan saved successfully!"); 
+                    
+                    // This forces the page to instantly refresh and clear the image
+                    window.location.reload(); 
+                } else {
+                    alert("Error saving: " + data.error);
+                }
+            })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save mr-2"></i> Save to Database';
+        });
+    }
+
+    window.addEventListener('DOMContentLoaded', initCamera);
+</script>
+{% endblock %}

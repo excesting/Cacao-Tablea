@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TableaScan — IDSS Framework</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bark: { 50: '#FFF8E7', 100: '#FEEBC8', 200: '#FCD9A0', 300: '#F6C56E', 400: '#E8A849', 500: '#A0522D', 600: '#8B4513', 700: '#6B3A2A', 800: '#4A2818', 900: '#2D1A0E' },
+            leaf: { 50: '#F0F9F0', 100: '#DCF0DC', 500: '#4CAF50', 600: '#388E3C', 900: '#1B431D' }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #FAFAFA;
+    }
+    .toast {
+      position: fixed; bottom: 2rem; right: 2rem; z-index: 50;
+      transform: translateY(150%) scale(0.9); opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .toast.show { transform: translateY(0) scale(1); opacity: 1; }
+  </style>
+</head>
+<body class="text-bark-900 font-sans min-h-screen flex flex-col selection:bg-leaf-500 selection:text-white">
+
+  <nav class="sticky top-4 z-50 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+    <div class="flex items-center justify-between">
+      
+      <div class="flex items-center gap-3 cursor-pointer w-[150px]" onclick="window.location.href='{{ url_for('home') }}'">
+        <div class="w-10 h-10 bg-leaf-50 rounded-xl flex items-center justify-center shadow-sm border border-leaf-100">
+          <svg class="w-6 h-6 text-leaf-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path>
+            <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path>
+          </svg>
+        </div>
+        <span class="text-xl font-display font-bold tracking-tight text-bark-900">TableaScan</span>
+      </div>
+      
+      <div class="hidden md:flex items-center gap-1 bg-white px-1.5 py-1.5 rounded-full border border-gray-200/70 shadow-sm backdrop-blur-md">
+        <a href="{{ url_for('home') }}" class="px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 {% if current_page == 'home' %}bg-gray-100 text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}">
+          Home
+        </a>
+        <a href="{{ url_for('detect') }}" class="px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 {% if current_page == 'detect' %}bg-gray-100 text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}">
+          Inspect
+        </a>
+        <a href="{{ url_for('analytics') }}" class="px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 {% if current_page == 'analytics' %}bg-gray-100 text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}">
+          Analytics
+        </a>
+        <a href="{{ url_for('logs') }}" class="px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 {% if current_page == 'logs' %}bg-gray-100 text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}">
+          Logs
+        </a>
+      </div>
+
+      <div class="hidden md:block w-[150px]"></div>
+
+      <div class="md:hidden flex items-center">
+        <button class="text-bark-900 p-2 focus:outline-none">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+
+    </div>
+  </nav>
+
+  <main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-24 md:pb-12">
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  <div id="toast" class="toast">
+    <div class="bg-white rounded-xl shadow-2xl border border-gray-100 p-4 flex items-center gap-3 max-w-sm">
+      <div id="toastIcon" class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"></div>
+      <div>
+        <div id="toastTitle" class="font-bold text-sm text-gray-900">Notification</div>
+        <div id="toastMsg" class="text-xs text-gray-500 mt-0.5">System message goes here.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='scripts.js') }}?v=7"></script>
+</body>
+</html>
