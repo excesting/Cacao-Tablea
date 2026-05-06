@@ -61,7 +61,8 @@ class ScanLog(db.Model):
         self.bloom_pcs = bloom_pcs
         self.defect_pcs = defect_pcs
         self.yield_percentage = (good_pcs / total_scanned * 100) if total_scanned > 0 else 0.0
-        self.cacao_used_kg = (total_scanned / 215.0) * 1.5
+        # UPDATED: Changed from 215.0 to 117.0 based on your new factory requirements
+        self.cacao_used_kg = (total_scanned / 117.0) * 1.5
 
 class DailyProduction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
