@@ -71,101 +71,96 @@ function pollProductionStats() {
 let forecastChartInstance = null;
 let defectTrendInstance   = null;
 
-// Track metrics for Production Target calculation (Demand / Yield)
-let currentDemand = 0;
-let currentYield = 0;
-
-function updateProductionTarget() {
-    const targetEl = document.getElementById('summary-production-target');
-    if (!targetEl || currentDemand === 0 || currentYield === 0) return;
-
-    // Formula: Demand / Yield (as decimal)
-    const yieldDecimal = currentYield / 100;
-    const target = currentDemand / yieldDecimal;
-
-    setLoading('summary-production-target', false);
-    targetEl.innerText = Math.ceil(target).toLocaleString();
-}
-
 function initAnalyticsPage() {
     console.log('[Analytics] Initializing dashboard...');
 
     if (typeof Chart === 'undefined') {
-        showChartError('demandForecastChart', 'Chart.js failed to load.');
-        showChartError('defectTrendChart',    'Chart.js failed to load.');
+        console.error('Chart.js failed to load.');
         return;
     }
 
     // Set loading placeholders
-    ['summary-demand', 'summary-projected-beans', 'stat-yield-top', 'stat-yield-sub', 'summary-production-target'].forEach(id => setLoading(id, true));
+    const cardIds = [
+        'card-demand', 'card-defect-rate', 'card-required', 
+        'card-recommended', 'card-batches', 'card-expected-defect', 
+        'card-expected-usable', 'card-gap'
+    ];
+    cardIds.forEach(id => setLoading(id, true));
 
-    // --- Fetch Forecast ---
-    fetch('/api/forecast')
-        .then(res => {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-        })
-        .then(data => {
-            renderForecastChart(data);
-            renderDefectTrendChart(data);
+    // Fetch BOTH APIs simultaneously
+    Promise.all([
+        fetch('/api/forecast').then(res => res.json()),
+        fetch('/api/stats').then(res => res.json())
+    ])
+    .then(([forecastData, statsData]) => {
+        
+        // 1. Render the charts
+        renderForecastChart(forecastData);
+        renderDefectTrendChart(forecastData);
 
-            const expectedArr = data.expected_demand || [0, 0, 0, 0];
-            currentDemand = expectedArr.reduce((a, b) => a + b, 0);
-
-            setLoading('summary-demand', false);
-            const demandEl = document.getElementById('summary-demand');
-            if (demandEl) demandEl.innerText = currentDemand.toLocaleString();
-
-            setLoading('summary-projected-beans', false);
-            const beansEl = document.getElementById('summary-projected-beans');
-            if (beansEl) {
-                // Formula: 1.5kg beans per 215 pieces
-                const projected_beans = (currentDemand / 117.0) * 1.5;
-                beansEl.innerText = projected_beans.toLocaleString(undefined, {
-                    minimumFractionDigits: 1,
-                    maximumFractionDigits: 1
-                }) + ' kg';
+        // Check if fallback data is being used
+        if (forecastData.status && forecastData.status.startsWith('Fallback')) {
+            const badge = document.getElementById('forecast-status-badge');
+            if (badge) {
+                badge.innerText = 'Demo Data';
+                badge.classList.add('bg-yellow-50', 'text-yellow-700', 'border-yellow-100');
+                badge.classList.remove('hidden');
             }
+        } else {
+            const badge = document.getElementById('forecast-status-badge');
+            if (badge) badge.classList.remove('hidden');
+        }
 
-            updateProductionTarget();
-            
-            if (data.status && data.status.startsWith('Fallback')) {
-                const badge = document.getElementById('forecast-status-badge');
-                if (badge) {
-                    badge.innerText = 'Demo Data';
-                    badge.classList.add('bg-yellow-50', 'text-yellow-700', 'border-yellow-100');
-                    badge.classList.remove('hidden');
-                }
-            }
-        })
-        .catch(err => {
-            ['summary-demand', 'summary-projected-beans'].forEach(id => showError(id, 'Error'));
-        });
+        // 2. Extract Base Variables
+        // We only look at Week 1 for current manufacturing goals
+        const week1Demand = forecastData.expected_demand[0] || 0;
+        
+        // Defect rate is calculated from the 4-week rolling yield
+        const currentYield = statsData.current_yield || 100;
+        const defectRate = 1 - (currentYield / 100);
 
-    // --- Fetch Weekly Stats ---
-    fetch('/api/stats')
-        .then(res => {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-        })
-        .then(data => {
-            currentYield = data.current_yield || 0;
-            setLoading('stat-yield-top', false);
-            const yieldTop = document.getElementById('stat-yield-top');
-            if (yieldTop) yieldTop.innerText = currentYield.toFixed(1) + '%';
+        // 3. Mathematical Calculations
+        const BATCH_SIZE = 1166;
+        
+        // Prevent dividing by zero if defect rate happens to be 100%
+        const requiredProduction = defectRate < 1 ? (week1Demand / (1 - defectRate)) : week1Demand;
+        
+        // Round up batches to prevent shortfall
+        const batches = Math.ceil(requiredProduction / BATCH_SIZE);
+        
+        const recommendedProduction = batches * BATCH_SIZE;
+        const expectedDefect = Math.round(recommendedProduction * defectRate);
+        const expectedUsable = recommendedProduction - expectedDefect;
+        const gap = expectedUsable - week1Demand;
 
-            setLoading('stat-yield-sub', false);
-            const yieldSub = document.getElementById('stat-yield-sub');
-            if (yieldSub) {
-                // Now explicitly calculating on 4-week rolling basis
-                yieldSub.innerText = "Yield (Last 4 Weeks Rolling)";
-            }
+        // 4. Update the UI Cards
+        cardIds.forEach(id => setLoading(id, false));
 
-            updateProductionTarget();
-        })
-        .catch(err => {
-            ['stat-yield-top', 'stat-yield-sub'].forEach(id => showError(id, 'Error'));
-        });
+        document.getElementById('card-demand').innerText = week1Demand.toLocaleString();
+        document.getElementById('card-defect-rate').innerText = (defectRate * 100).toFixed(2) + "%";
+        document.getElementById('card-required').innerText = Math.ceil(requiredProduction).toLocaleString();
+        
+        document.getElementById('card-recommended').innerText = recommendedProduction.toLocaleString();
+        document.getElementById('card-batches').innerText = batches + " Full Batches Needed";
+
+        document.getElementById('card-expected-defect').innerText = expectedDefect.toLocaleString() + " pcs";
+        document.getElementById('card-expected-usable').innerText = expectedUsable.toLocaleString() + " pcs";
+
+        // Style the Gap dynamically
+        const gapElement = document.getElementById('card-gap');
+        if (gap >= 0) {
+            gapElement.innerText = "+" + gap.toLocaleString() + " pcs (Safety Stock)";
+            gapElement.className = "text-xl font-bold text-leaf-600 mt-1";
+        } else {
+            gapElement.innerText = gap.toLocaleString() + " pcs (Shortfall!)";
+            gapElement.className = "text-xl font-bold text-red-600 mt-1";
+        }
+
+    })
+    .catch(err => {
+        console.error("Dashboard calculation error:", err);
+        cardIds.forEach(id => showError(id, 'Error'));
+    });
 }
 
 // ============================================================
@@ -244,7 +239,7 @@ function renderDefectTrendChart(data) {
 }
 
 // ============================================================
-// 4. SCANNER UTILITIES (Refresh fix)
+// 4. SCANNER UTILITIES
 // ============================================================
 function confirmScan(scanData) {
     fetch('/api/confirm_scan', {
@@ -255,22 +250,10 @@ function confirmScan(scanData) {
     .then(res => res.json())
     .then(data => {
         if (data.status === 'success') {
-            // Fixes the manual refresh issue
             window.location.reload(); 
         } else {
             alert("Error saving: " + data.error);
         }
     })
     .catch(err => console.error("Save failed:", err));
-}
-
-function showChartError(canvasId, message) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    const wrapper = canvas.parentElement;
-    canvas.style.display = 'none';
-    const msg = document.createElement('div');
-    msg.className = 'flex items-center justify-center h-full text-sm text-red-400 font-medium';
-    msg.innerText = `⚠ ${message}`;
-    wrapper.appendChild(msg);
 }
