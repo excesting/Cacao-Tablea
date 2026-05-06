@@ -1,104 +1,102 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto">
-
-    {# PAGE HEADER #}
-    <div class="mb-8">
-        <h2 class="text-3xl font-display font-bold text-bark-900">Production Dashboard</h2>
-        <p class="text-gray-500 mt-1">AI-driven forecasts and real-time factory performance.</p>
+<div class="max-w-6xl mx-auto space-y-6 animate-fade-in">
+    
+    <div class="flex justify-between items-end mb-4">
+        <div>
+            <h2 class="text-3xl font-display font-bold text-bark-900">Production Analytics</h2>
+            <p class="text-bark-600 mt-1">AI-driven demand forecasting and batch recommendations</p>
+        </div>
+        <span id="forecast-status-badge" class="hidden bg-leaf-50 text-leaf-700 text-xs font-bold px-3 py-1 rounded-full border border-leaf-100">
+            TFT AI Model Active
+        </span>
     </div>
 
-    {# TOP KPI CARDS - Updated to 4 columns #}
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-
-        {# 4-Week Demand #}
-        <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100 flex flex-col justify-center relative overflow-hidden">
-            <div class="flex items-center gap-3 mb-2">
-                <div class="w-10 h-10 rounded-xl bg-leaf-50 border border-leaf-100 flex items-center justify-center text-leaf-600">
-                    <i class="fas fa-chart-line"></i>
-                </div>
-                <h3 class="text-sm font-bold text-bark-600 uppercase tracking-wider">4-Week Demand</h3>
-            </div>
-            <div class="text-4xl font-black text-bark-900 mt-2" id="summary-demand">--</div>
-            <p class="text-xs text-gray-400 mt-2">Predicted pieces to be sold</p>
-            <div class="absolute -right-4 -bottom-4 opacity-5 text-8xl">
-                <i class="fas fa-box-open"></i>
-            </div>
+    <!-- Analytics Cards Grid (Top 4) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        <!-- Card 1: Demand -->
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-bark-200">
+            <h3 class="text-sm font-bold text-bark-500 uppercase tracking-wider mb-1">Week 1 Demand</h3>
+            <div class="text-3xl font-bold text-bark-900" id="card-demand">--</div>
+            <p class="text-xs text-bark-500 mt-2">Predicted pieces needed</p>
         </div>
 
-        {# NEW: Production Needed (Demand / Yield) #}
-        <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100 flex flex-col justify-center relative overflow-hidden">
-            <div class="flex items-center gap-3 mb-2">
-                <div class="w-10 h-10 rounded-xl bg-bark-900 border border-bark-900 flex items-center justify-center text-white">
-                    <i class="fas fa-industry"></i>
-                </div>
-                <h3 class="text-sm font-bold text-bark-600 uppercase tracking-wider">Production Needed</h3>
-            </div>
-            <div class="text-4xl font-black text-bark-900 mt-2" id="summary-production-target">--</div>
-            <p class="text-xs text-gray-400 mt-2">Target to meet demand after defects</p>
-            <div class="absolute -right-4 -bottom-4 opacity-5 text-8xl">
-                <i class="fas fa-conveyor-belt"></i>
-            </div>
+        <!-- Card 2: Defect Rate -->
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-bark-200">
+            <h3 class="text-sm font-bold text-bark-500 uppercase tracking-wider mb-1">Defect Rate</h3>
+            <div class="text-3xl font-bold text-red-500" id="card-defect-rate">--%</div>
+            <p class="text-xs text-bark-500 mt-2">Current rolling average</p>
         </div>
 
-        {# Cacao Beans Needed #}
-        <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100 flex flex-col justify-center relative overflow-hidden">
-            <div class="flex items-center gap-3 mb-2">
-                <div class="w-10 h-10 rounded-xl bg-bark-50 border border-bark-100 flex items-center justify-center text-bark-600">
-                    <i class="fas fa-seedling"></i>
-                </div>
-                <h3 class="text-sm font-bold text-bark-600 uppercase tracking-wider">Cacao Beans Needed</h3>
-            </div>
-            <div class="text-4xl font-black text-bark-900 mt-2" id="summary-projected-beans">--</div>
-            <p class="text-xs text-gray-400 mt-2">Required for projected demand</p>
-            <div class="absolute -right-4 -bottom-4 opacity-5 text-8xl">
-                <i class="fas fa-leaf"></i>
-            </div>
+        <!-- Card 3: Required Production -->
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-bark-200">
+            <h3 class="text-sm font-bold text-bark-500 uppercase tracking-wider mb-1">Required Prod.</h3>
+            <div class="text-3xl font-bold text-yellow-600" id="card-required">--</div>
+            <p class="text-xs text-bark-500 mt-2">To meet demand after defects</p>
         </div>
 
-        {# Overall Yield #}
-        <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100 flex flex-col justify-center relative overflow-hidden">
-            <div class="flex items-center gap-3 mb-2">
-                <div class="w-10 h-10 rounded-xl bg-leaf-50 border border-leaf-100 flex items-center justify-center text-leaf-600">
-                    <i class="fas fa-check-circle"></i>
-                </div>
-                <h3 class="text-sm font-bold text-bark-600 uppercase tracking-wider">Overall Yield</h3>
-            </div>
-            <div class="text-4xl font-black text-leaf-600 mt-2" id="stat-yield-top">--%</div>
-            <p class="text-xs text-gray-400 mt-2 font-medium" id="stat-yield-sub">Good vs Total Produced</p>
-            <div class="absolute -right-4 -bottom-4 opacity-5 text-8xl text-leaf-600">
-                <i class="fas fa-certificate"></i>
+        <!-- Card 4: Recommended Production (Batch Adjusted) -->
+        <div class="bg-white p-5 rounded-xl shadow-md border-2 border-leaf-500 relative overflow-hidden">
+            <h3 class="text-sm font-bold text-leaf-600 uppercase tracking-wider mb-1">Recommended Prod.</h3>
+            <div class="text-3xl font-bold text-leaf-600" id="card-recommended">--</div>
+            <p class="text-sm font-bold text-bark-800 mt-2 bg-leaf-50 inline-block px-2 py-1 rounded" id="card-batches">-- Batches</p>
+            <div class="absolute -right-4 -bottom-4 opacity-10 text-6xl text-leaf-600">
+                <i class="fas fa-boxes"></i>
             </div>
         </div>
 
     </div>
 
-    {# CHARTS #}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <!-- Secondary Metrics (Bottom 3) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        <!-- Card 5: Expected Defect -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
+            <div>
+                <h3 class="text-xs font-bold text-bark-500 uppercase tracking-wider">Expected Defects</h3>
+                <div class="text-xl font-bold text-bark-900 mt-1" id="card-expected-defect">--</div>
+            </div>
+            <i class="fas fa-exclamation-triangle text-red-200 text-3xl"></i>
+        </div>
+
+        <!-- Card 6: Expected Usable Output -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
+            <div>
+                <h3 class="text-xs font-bold text-bark-500 uppercase tracking-wider">Expected Usable</h3>
+                <div class="text-xl font-bold text-bark-900 mt-1" id="card-expected-usable">--</div>
+            </div>
+            <i class="fas fa-check-circle text-leaf-200 text-3xl"></i>
+        </div>
+
+        <!-- Card 7: Gap / Safety Stock -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
+            <div>
+                <h3 class="text-xs font-bold text-bark-500 uppercase tracking-wider">Surplus / Gap</h3>
+                <div class="text-xl font-bold text-bark-300 mt-1" id="card-gap">--</div>
+            </div>
+            <i class="fas fa-layer-group text-blue-200 text-3xl"></i>
+        </div>
+
+    </div>
+
+    <!-- CHARTS -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
         <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-lg font-bold text-bark-900">Projected Demand Trend</h3>
-                <span id="forecast-status-badge" class="bg-leaf-50 text-leaf-700 text-xs font-bold px-3 py-1 rounded-full border border-leaf-100">
-                    TFT AI Model
-                </span>
-            </div>
+            <h3 class="text-lg font-bold text-bark-900 mb-4">4-Week Demand Forecast</h3>
             <div class="relative h-72">
                 <canvas id="demandForecastChart"></canvas>
             </div>
         </div>
 
         <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-lg font-bold text-bark-900">Defect Trend Over Time</h3>
-                <span class="bg-red-50 text-red-600 text-xs font-bold px-3 py-1 rounded-full border border-red-100">
-                    Historical
-                </span>
-            </div>
+            <h3 class="text-lg font-bold text-bark-900 mb-4">Defect Trend Over Time</h3>
             <div class="relative h-72">
                 <canvas id="defectTrendChart"></canvas>
             </div>
         </div>
     </div>
+
 </div>
 {% endblock %}
