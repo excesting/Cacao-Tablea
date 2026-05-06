@@ -120,7 +120,7 @@ function initAnalyticsPage() {
             const beansEl = document.getElementById('summary-projected-beans');
             if (beansEl) {
                 // Formula: 1.5kg beans per 215 pieces
-                const projected_beans = (currentDemand / 215.0) * 1.5;
+                const projected_beans = (currentDemand / 117.0) * 1.5;
                 beansEl.innerText = projected_beans.toLocaleString(undefined, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1
