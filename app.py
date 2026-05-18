@@ -261,6 +261,11 @@ def add_sales():
     try:
         date_str = request.form.get('sales_date')
         sales = int(request.form.get('weekly_sales', 0))
+        
+        # Capture the new Event Name from the form
+        event_name = request.form.get('event_name', '').strip()
+        if not event_name:
+            event_name = "None"
 
         date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
         year, week_num, _ = date_obj.isocalendar()
@@ -268,13 +273,19 @@ def add_sales():
         month_name = date_obj.strftime('%B')
 
         history = ProductionHistory.query.filter_by(week_id=week_id).first()
+        
         if not history:
+            # If creating a brand new week record
             max_idx = db.session.query(db.func.max(ProductionHistory.time_idx)).scalar() or 0
             history = ProductionHistory(
                 time_idx=max_idx + 1, branch="Lipa", month=month_name, 
-                week_id=week_id, event_name="None", total_produced=0, net_usable_output=0, defect_rate=0.0
+                week_id=week_id, event_name=event_name, total_produced=0, net_usable_output=0, defect_rate=0.0
             )
             db.session.add(history)
+        else:
+            # If the week already exists, just update the event and sales
+            if event_name != "None":
+                history.event_name = event_name
 
         history.sales_pcs = sales
         db.session.commit()
