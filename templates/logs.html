@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="mb-8">
+<div class="mb-8 animate-fade-in">
     <h1 class="text-3xl font-display font-bold text-bark-900">Production & Sales Logs</h1>
-    <p class="text-gray-500 mt-2">Record daily scans from the factory floor, and input finalized sales weekly.</p>
+    <p class="text-bark-500 mt-2">Record daily scans from the factory floor, and input finalized sales weekly.</p>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
     
     <div class="lg:col-span-1 space-y-6">
         
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
+        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in">
             <div class="bg-bark-900 px-6 py-4">
                 <h2 class="text-lg font-bold text-white"><i class="fas fa-industry mr-2"></i>1. Daily Production</h2>
             </div>
@@ -18,56 +18,61 @@
                 <form action="/api/add_log" method="POST" class="space-y-4">
                     <div>
                         <label class="block text-sm font-semibold text-bark-900 mb-1">Date</label>
-                        <input type="date" id="log-date" name="date" class="w-full rounded-lg border-gray-300 shadow-sm px-3 py-2 border bg-gray-50" required>
+                        <input type="date" id="log-date" name="date" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-leaf-500 focus:border-leaf-500 outline-none" required>
                     </div>
 
-                    <div class="p-4 bg-leaf-50 rounded-xl border border-leaf-100 space-y-3">
-                        <p class="text-xs font-bold text-leaf-700 uppercase tracking-wide"><i class="fas fa-robot mr-1"></i> Today's Scanner Totals</p>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-semibold text-bark-900 mb-1">Produced</label>
-                                <input type="number" name="total_produced" class="w-full rounded-md border-leaf-200 px-2 py-1 border font-bold bg-white" value="{{ today_produced }}" readonly>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-red-600 mb-1">Total Defects</label>
-                                <input type="number" name="total_defects" class="w-full rounded-md border-leaf-200 px-2 py-1 border font-bold text-red-600 bg-white" value="{{ today_defects }}" readonly>
-                            </div>
-                            <input type="hidden" name="cracked_count" value="{{ today_crack }}">
-                            <input type="hidden" name="bloom_count" value="{{ today_bloom }}">
+                    <div class="p-4 bg-leaf-50 border border-leaf-100 rounded-xl space-y-3">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="font-semibold text-bark-700">Today's Scanned:</span>
+                            <span class="font-bold text-bark-900">{{ today_produced }} pcs</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="font-semibold text-leaf-600">Good Quality:</span>
+                            <span class="font-bold text-leaf-700">{{ today_good }} pcs</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="font-semibold text-red-500">Total Defects:</span>
+                            <span class="font-bold text-red-600">{{ today_defects }} pcs</span>
+                        </div>
+                        <div class="text-xs text-bark-500 border-t border-leaf-200 pt-2 mt-2">
+                            (Cracks: {{ today_crack }} | Bloom: {{ today_bloom }})
                         </div>
                     </div>
 
-                    <div class="pt-2">
-                        <label class="block text-sm font-bold text-bark-900 mb-1">Good Tablea (Net Usable Output)</label>
-                        <input type="number" id="input-good" name="good_count" class="w-full rounded-lg border-leaf-400 shadow-inner px-3 py-3 border font-black text-lg bg-leaf-100 text-leaf-900 outline-none" value="{{ today_good }}">
-                        <p class="text-xs text-gray-500 mt-1">This goes directly to packaging.</p>
-                    </div>
-                    
-                    <button type="submit" class="w-full bg-bark-900 hover:bg-bark-800 text-white font-bold py-3 px-4 rounded-xl transition shadow-md flex items-center justify-center gap-2">
-                        <i class="fas fa-save"></i> Save Daily Log
+                    <input type="hidden" name="total_produced" value="{{ today_produced }}">
+                    <input type="hidden" name="total_defects" value="{{ today_defects }}">
+                    <input type="hidden" name="cracked_count" value="{{ today_crack }}">
+                    <input type="hidden" name="bloom_count" value="{{ today_bloom }}">
+                    <input type="hidden" name="good_count" value="{{ today_good }}">
+
+                    <button type="submit" class="w-full bg-leaf-500 hover:bg-leaf-600 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition">
+                        Confirm & Lock Daily Record
                     </button>
                 </form>
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm border border-yellow-200 overflow-hidden animate-fade-in" style="animation-delay: 0.1s;">
-            <div class="bg-yellow-400 px-6 py-3 flex items-center gap-2">
-                <i class="fas fa-store text-bark-900"></i>
-                <h2 class="text-md font-bold text-bark-900">2. Weekly Sales Update</h2>
+        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in delay-100">
+            <div class="bg-bark-900 px-6 py-4">
+                <h2 class="text-lg font-bold text-white"><i class="fas fa-store mr-2"></i>2. Weekly Sales & Events</h2>
             </div>
             <div class="p-6">
                 <form action="/api/add_sales" method="POST" class="space-y-4">
                     <div>
-                        <label class="block text-sm font-semibold text-bark-900 mb-1">Select Date</label>
-                        <input type="date" id="sales-date" name="sales_date" class="w-full rounded-lg border-gray-300 shadow-sm px-3 py-2 border bg-gray-50 text-sm" required>
-                        <p class="text-xs text-gray-500 mt-1">Select any day within the target week.</p>
+                        <label class="block text-sm font-semibold text-bark-900 mb-1">Week Ending Date</label>
+                        <input type="date" id="sales-date" name="sales_date" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-yellow-500 focus:border-yellow-500 outline-none" required>
                     </div>
                     <div>
-                        <label class="block text-sm font-bold text-bark-900 mb-1">Total Weekly Sales</label>
-                        <input type="number" name="weekly_sales" class="w-full rounded-lg border-yellow-300 shadow-inner px-3 py-3 border font-black text-lg bg-yellow-50 text-bark-900 focus:ring-yellow-500 focus:border-yellow-500" placeholder="e.g. 15000" required>
+                        <label class="block text-sm font-semibold text-bark-900 mb-1">Actual Sales (pcs)</label>
+                        <input type="number" name="weekly_sales" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-yellow-500 focus:border-yellow-500 outline-none font-bold text-lg" placeholder="e.g. 8200" required>
                     </div>
-                    <button type="submit" class="w-full bg-yellow-500 hover:bg-yellow-400 text-bark-900 font-bold py-3 px-4 rounded-xl transition shadow-sm">
-                        Inject Sales to AI
+                    <div>
+                        <label class="block text-sm font-semibold text-bark-900 mb-1">Event Name <span class="text-bark-500 font-normal">(Optional)</span></label>
+                        <input type="text" name="event_name" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-yellow-500 focus:border-yellow-500 outline-none" placeholder="e.g. Christmas, Valentine, Wedding">
+                        <p class="text-xs text-bark-500 mt-1">Leave blank for normal/regular weeks.</p>
+                    </div>
+                    <button type="submit" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition">
+                        Log Weekly Update
                     </button>
                 </form>
             </div>
@@ -76,36 +81,34 @@
 
     <div class="lg:col-span-2 space-y-6">
         
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in" style="animation-delay: 0.2s;">
-            <div class="bg-white border-b border-gray-100 px-6 py-4">
-                <h2 class="text-lg font-bold text-bark-900">Daily Production History</h2>
+        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in delay-100">
+            <div class="bg-white border-b border-bark-200 px-6 py-4">
+                <h2 class="text-lg font-bold text-bark-900">Recent Daily Logs</h2>
             </div>
-            <div class="overflow-x-auto overflow-y-auto max-h-80">
-                <table class="w-full text-left border-collapse whitespace-nowrap">
-                    <thead class="sticky top-0 bg-gray-50 shadow-sm z-10">
-                        <tr class="text-gray-500 text-xs uppercase tracking-wider">
-                            <th class="px-4 py-3 font-medium border-b border-gray-100">Date</th>
-                            <th class="px-4 py-3 font-medium border-b border-gray-100">Produced</th>
-                            <th class="px-4 py-3 font-medium text-red-500 border-b border-gray-100">Total Defects</th>
-                            <th class="px-4 py-3 font-medium text-orange-500 border-b border-gray-100">Cracked</th>
-                            <th class="px-4 py-3 font-medium text-amber-500 border-b border-gray-100">Fat Bloom</th>
-                            <th class="px-4 py-3 font-medium text-leaf-700 border-b border-gray-100">Good Tablea</th>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-bark-50 text-bark-500 uppercase text-xs tracking-wider">
+                            <th class="px-6 py-3 font-bold">Date</th>
+                            <th class="px-6 py-3 font-bold">Week ID</th>
+                            <th class="px-6 py-3 font-bold">Produced</th>
+                            <th class="px-6 py-3 font-bold">Good Quality</th>
+                            <th class="px-6 py-3 font-bold">Defects</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100">
+                    <tbody class="divide-y divide-bark-100">
                         {% for log in logs %}
-                        <tr class="hover:bg-gray-50 transition-colors">
-                            <td class="px-4 py-3 text-sm font-medium text-bark-900">{{ log.date.strftime('%b %d, %Y') }}</td>
-                            <td class="px-4 py-3 text-sm text-gray-700">{{ log.total_produced }}</td>
-                            <td class="px-4 py-3 text-sm text-red-600 font-medium">{{ log.total_defects }}</td>
-                            <td class="px-4 py-3 text-sm text-orange-500">{{ log.cracked_count }}</td>
-                            <td class="px-4 py-3 text-sm text-amber-500">{{ log.bloom_count }}</td>
-                            <td class="px-4 py-3 text-sm font-black text-leaf-700">{{ log.good_count }}</td>
+                        <tr class="hover:bg-bark-50/50 transition-colors">
+                            <td class="px-6 py-3 text-sm font-medium text-bark-900">{{ log.date.strftime('%Y-%m-%d') }}</td>
+                            <td class="px-6 py-3 text-sm text-bark-500">{{ log.week_id }}</td>
+                            <td class="px-6 py-3 text-sm font-bold text-bark-900">{{ log.total_produced }}</td>
+                            <td class="px-6 py-3 text-sm font-bold text-leaf-600">{{ log.good_count }}</td>
+                            <td class="px-6 py-3 text-sm text-red-500">{{ log.total_defects }}</td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="px-6 py-12 text-center text-gray-400 text-sm">
-                                No daily production logged yet.
+                            <td colspan="5" class="px-6 py-8 text-center text-bark-400 text-sm">
+                                No daily logs locked yet.
                             </td>
                         </tr>
                         {% endfor %}
@@ -114,53 +117,54 @@
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in" style="animation-delay: 0.3s;">
-            <div class="bg-bark-50 border-b border-gray-100 px-6 py-4 flex justify-between items-center">
-                <h2 class="text-lg font-bold text-bark-900">Weekly AI Master Record</h2>
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider bg-white px-2 py-1 rounded border border-gray-200">TFT Dataset</span>
+        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in delay-200">
+            <div class="bg-bark-900 px-6 py-4 flex justify-between items-center">
+                <h2 class="text-lg font-bold text-white"><i class="fas fa-table mr-2"></i>Weekly Master Record</h2>
+                <span class="bg-bark-700 text-white text-xs font-medium px-3 py-1 rounded-full">Historical Archive</span>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse whitespace-nowrap">
-                    <thead class="bg-white">
-                        <tr class="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-100">
-                            <th class="px-6 py-3 font-medium">Week ID</th>
-                            <th class="px-6 py-3 font-medium">Month</th>
-                            <th class="px-6 py-3 font-medium text-purple-600">Event / Promo</th>
-                            <th class="px-6 py-3 font-medium text-leaf-600">Weekly Usable</th>
-                            <th class="px-6 py-3 font-medium text-yellow-600">Weekly Sales (Actual)</th>
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-bark-50 text-bark-500 uppercase text-xs tracking-wider border-b border-bark-200">
+                            <th class="px-6 py-3 font-bold">Global Wk</th>
+                            <th class="px-6 py-3 font-bold">Month</th>
+                            <th class="px-6 py-3 font-bold">Event Name</th>
+                            <th class="px-6 py-3 font-bold">Produced</th>
+                            <th class="px-6 py-3 font-bold">Net Usable</th>
+                            <th class="px-6 py-3 font-bold">Defect Rate</th>
+                            <th class="px-6 py-3 font-bold">Sales (pcs)</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100">
+                    <tbody class="divide-y divide-bark-100">
                         {% for week in weekly_logs %}
-                        <tr class="hover:bg-gray-50 transition-colors">
-                            <td class="px-6 py-3 text-sm font-bold text-bark-900">
-                                {% if week.week_id and week.week_id != 'Unknown' %}
-                                    {{ week.week_id }}
-                                {% else %}
-                                    Wk {{ week.time_idx }}
-                                {% endif %}
+                        <tr class="hover:bg-bark-50/50 transition-colors">
+                            <td class="px-6 py-3 text-sm text-bark-900 font-medium">
+                                Wk {{ week.time_idx }} 
+                                <span class="text-xs text-bark-400 block">{{ week.week_id }}</span>
                             </td>
-                            <td class="px-6 py-3 text-sm text-gray-600">{{ week.month }}</td>
-                            <td class="px-6 py-3 text-sm text-purple-600 font-medium">
+                            <td class="px-6 py-3 text-sm text-bark-600">{{ week.month }}</td>
+                            <td class="px-6 py-3 text-sm text-bark-600">
                                 {% if week.event_name and week.event_name != 'None' %}
                                     {{ week.event_name }}
                                 {% else %}
-                                    -
+                                    <span class="text-bark-400 italic">Regular</span>
                                 {% endif %}
                             </td>
-                            <td class="px-6 py-3 text-sm font-bold text-leaf-600">{{ week.net_usable_output }}</td>
+                            <td class="px-6 py-3 text-sm text-bark-900 font-medium">{{ "{:,.0f}".format(week.total_produced) }}</td>
+                            <td class="px-6 py-3 text-sm font-bold text-leaf-600">{{ "{:,.0f}".format(week.net_usable_output) }}</td>
+                            <td class="px-6 py-3 text-sm text-red-500 font-medium">{{ "%.2f" | format(week.defect_rate * 100) }}%</td>
                             <td class="px-6 py-3 text-sm font-bold text-yellow-600 bg-yellow-50/30">
                                 {% if week.sales_pcs > 0 %}
-                                    {{ week.sales_pcs }}
+                                    {{ "{:,.0f}".format(week.sales_pcs) }}
                                 {% else %}
-                                    <span class="text-gray-400 font-normal italic">Pending input...</span>
+                                    <span class="text-bark-400 font-normal italic">Pending...</span>
                                 {% endif %}
                             </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="5" class="px-6 py-8 text-center text-gray-400 text-sm">
-                                No weekly roll-ups generated yet.
+                            <td colspan="7" class="px-6 py-8 text-center text-bark-400 text-sm">
+                                No weekly records generated yet.
                             </td>
                         </tr>
                         {% endfor %}
