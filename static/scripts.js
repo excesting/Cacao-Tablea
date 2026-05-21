@@ -132,6 +132,7 @@ function initAnalyticsPage() {
         const expectedDefect = Math.round(recommendedProduction * defectRate);
         const expectedUsable = recommendedProduction - expectedDefect;
         const gap = expectedUsable - week1Demand;
+        const kilosNeeded = (recommendedProduction * (1.5 / 117)).toFixed(1);
 
         // 4. Update the UI Cards
         cardIds.forEach(id => setLoading(id, false));
@@ -154,6 +155,10 @@ function initAnalyticsPage() {
         } else {
             gapElement.innerText = gap.toLocaleString() + " pcs (Shortfall!)";
             gapElement.className = "text-xl font-bold text-red-600 mt-1";
+        }
+
+        if (document.getElementById('card-kilos')) {
+            document.getElementById('card-kilos').innerText = kilosNeeded;
         }
 
     })
