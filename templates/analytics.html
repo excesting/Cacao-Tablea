@@ -13,31 +13,26 @@
         </span>
     </div>
 
-    <!-- Analytics Cards Grid (Top 4) -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        <!-- Card 1: Demand -->
         <div class="bg-white p-5 rounded-xl shadow-sm border border-bark-200">
             <h3 class="text-sm font-bold text-bark-500 uppercase tracking-wider mb-1">Week 1 Demand</h3>
             <div class="text-3xl font-bold text-bark-900" id="card-demand">--</div>
             <p class="text-xs text-bark-500 mt-2">Predicted pieces needed</p>
         </div>
 
-        <!-- Card 2: Defect Rate -->
         <div class="bg-white p-5 rounded-xl shadow-sm border border-bark-200">
             <h3 class="text-sm font-bold text-bark-500 uppercase tracking-wider mb-1">Defect Rate</h3>
             <div class="text-3xl font-bold text-red-500" id="card-defect-rate">--%</div>
             <p class="text-xs text-bark-500 mt-2">Current rolling average</p>
         </div>
 
-        <!-- Card 3: Required Production -->
         <div class="bg-white p-5 rounded-xl shadow-sm border border-bark-200">
             <h3 class="text-sm font-bold text-bark-500 uppercase tracking-wider mb-1">Required Prod.</h3>
             <div class="text-3xl font-bold text-yellow-600" id="card-required">--</div>
             <p class="text-xs text-bark-500 mt-2">To meet demand after defects</p>
         </div>
 
-        <!-- Card 4: Recommended Production (Batch Adjusted) -->
         <div class="bg-white p-5 rounded-xl shadow-md border-2 border-leaf-500 relative overflow-hidden">
             <h3 class="text-sm font-bold text-leaf-600 uppercase tracking-wider mb-1">Recommended Prod.</h3>
             <div class="text-3xl font-bold text-leaf-600" id="card-recommended">--</div>
@@ -49,10 +44,16 @@
 
     </div>
 
-    <!-- Secondary Metrics (Bottom 3) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         
-        <!-- Card 5: Expected Defect -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
+            <div>
+                <h3 class="text-xs font-bold text-amber-600 uppercase tracking-wider">Cacao Needed</h3>
+                <div class="text-xl font-bold text-amber-900 mt-1"><span id="card-kilos">--</span> kg</div>
+            </div>
+            <i class="fas fa-seedling text-amber-200 text-3xl"></i>
+        </div>
+
         <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
             <div>
                 <h3 class="text-xs font-bold text-bark-500 uppercase tracking-wider">Expected Defects</h3>
@@ -61,7 +62,6 @@
             <i class="fas fa-exclamation-triangle text-red-200 text-3xl"></i>
         </div>
 
-        <!-- Card 6: Expected Usable Output -->
         <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
             <div>
                 <h3 class="text-xs font-bold text-bark-500 uppercase tracking-wider">Expected Usable</h3>
@@ -70,7 +70,6 @@
             <i class="fas fa-check-circle text-leaf-200 text-3xl"></i>
         </div>
 
-        <!-- Card 7: Gap / Safety Stock -->
         <div class="bg-white p-4 rounded-xl shadow-sm border border-bark-200 flex justify-between items-center">
             <div>
                 <h3 class="text-xs font-bold text-bark-500 uppercase tracking-wider">Surplus / Gap</h3>
@@ -81,7 +80,6 @@
 
     </div>
 
-    <!-- CHARTS -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
         <div class="bg-white rounded-2xl p-6 shadow-sm border border-bark-100">
             <h3 class="text-lg font-bold text-bark-900 mb-4">4-Week Demand Forecast</h3>
