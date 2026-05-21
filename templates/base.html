@@ -41,7 +41,6 @@
     }
   </script>
 
-  <!-- Fonts & Icons -->
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -79,30 +78,23 @@
       from { opacity: 0; transform: translateY(6px); }
       to   { opacity: 1; transform: translateY(0);   }
     }
-
-    /* Mobile menu slide-down */
-    #mobileMenu {
-      display: none;
-      transform-origin: top;
-    }
-    #mobileMenu.open {
-      display: block;
-      animation: slideDown 0.2s ease-out;
+    
+    /* Animation for mobile menu */
+    .slide-down {
+      animation: slideDown 0.2s ease-out forwards;
     }
     @keyframes slideDown {
-      from { opacity: 0; transform: scaleY(0.9); }
-      to   { opacity: 1; transform: scaleY(1);   }
+      from { opacity: 0; transform: scaleY(0.95); transform-origin: top; }
+      to   { opacity: 1; transform: scaleY(1); transform-origin: top; }
     }
   </style>
 </head>
 
 <body class="text-bark-900 font-sans min-h-screen flex flex-col selection:bg-leaf-500 selection:text-white">
 
-  <!-- ─── Navbar ─── -->
   <nav class="sticky top-4 z-50 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
     <div class="flex items-center justify-between">
 
-      <!-- Logo -->
       <div
         class="flex items-center gap-3 cursor-pointer w-[150px]"
         onclick="window.location.href='{{ url_for('home') }}'"
@@ -119,10 +111,9 @@
             <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path>
           </svg>
         </div>
-        <span class="text-xl font-display font-bold tracking-tight text-bark-900">TableaScan</span>
+        <span class="text-xl font-bold tracking-tight text-bark-900">TableaScan</span>
       </div>
 
-      <!-- Desktop Nav Pills -->
       <div class="hidden md:flex items-center gap-1 bg-white px-1.5 py-1.5 rounded-full border border-gray-200/70 shadow-sm backdrop-blur-md">
         <a
           href="{{ url_for('home') }}"
@@ -142,10 +133,8 @@
         >Logs</a>
       </div>
 
-      <!-- Spacer (desktop) -->
       <div class="hidden md:block w-[150px]"></div>
 
-      <!-- Mobile Hamburger -->
       <div class="md:hidden">
         <button
           id="menuToggle"
@@ -162,8 +151,7 @@
 
     </div>
 
-    <!-- Mobile Dropdown Menu -->
-    <div id="mobileMenu" class="md:hidden mt-2 bg-white rounded-2xl border border-gray-200/70 shadow-md overflow-hidden">
+    <div id="mobileMenu" class="hidden md:hidden mt-2 bg-white rounded-2xl border border-gray-200/70 shadow-md overflow-hidden slide-down">
       <div class="flex flex-col p-2 gap-1">
         <a
           href="{{ url_for('home') }}"
@@ -192,15 +180,11 @@
       </div>
     </div>
   </nav>
-  <!-- ─── End Navbar ─── -->
-
-  <!-- ─── Page Content ─── -->
   <main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-24 md:pb-12">
     {% block content %}
     {% endblock %}
   </main>
 
-  <!-- ─── Toast Notification ─── -->
   <div id="toast" class="toast">
     <div class="bg-white rounded-xl shadow-2xl border border-gray-100 p-4 flex items-center gap-3 max-w-sm">
       <div id="toastIcon" class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"></div>
@@ -211,16 +195,16 @@
     </div>
   </div>
 
-  <!-- ─── Scripts ─── -->
   <script src="{{ url_for('static', filename='scripts.js') }}?v=7"></script>
 
   <script>
+    // Updated Javascript toggling Tailwind's 'hidden' class directly
     function toggleMobileMenu() {
       const menu     = document.getElementById('mobileMenu');
       const iconOpen  = document.getElementById('menuIconOpen');
       const iconClose = document.getElementById('menuIconClose');
 
-      menu.classList.toggle('open');
+      menu.classList.toggle('hidden');
       iconOpen.classList.toggle('hidden');
       iconClose.classList.toggle('hidden');
     }
@@ -229,8 +213,10 @@
     document.addEventListener('click', function (e) {
       const menu   = document.getElementById('mobileMenu');
       const toggle = document.getElementById('menuToggle');
-      if (!menu.contains(e.target) && !toggle.contains(e.target)) {
-        menu.classList.remove('open');
+      
+      // Only fire if the menu is currently open
+      if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !toggle.contains(e.target)) {
+        menu.classList.add('hidden');
         document.getElementById('menuIconOpen').classList.remove('hidden');
         document.getElementById('menuIconClose').classList.add('hidden');
       }
