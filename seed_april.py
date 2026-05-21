@@ -25,7 +25,6 @@ def generate_april_data():
             month_name = current_date.strftime('%B')
 
             # Generate realistic daily numbers based on your historical CSV
-            # Weekly average was ~50,000, so daily is ~7,142
             produced = random.randint(6800, 7500)
             
             # Historical defect rate is ~2.5%
@@ -63,6 +62,10 @@ def generate_april_data():
         print(f"✅ Created 30 daily logs for April 2026.")
 
         # 3. Generate the Weekly Master Records (ProductionHistory)
+        
+        # ✅ Get the max index ONCE before the loop starts
+        max_idx = db.session.query(db.func.max(ProductionHistory.time_idx)).scalar() or 0
+
         for week_id, totals in weekly_data.items():
             # Check if this week already exists to update it, or create new
             history = ProductionHistory.query.filter_by(week_id=week_id).first()
@@ -75,9 +78,10 @@ def generate_april_data():
             w_sales = int(w_usable * random.uniform(0.95, 0.99))
 
             if not history:
-                max_idx = db.session.query(db.func.max(ProductionHistory.time_idx)).scalar() or 0
+                # ✅ Manually increment the local variable by 1 for each new week
+                max_idx += 1 
                 history = ProductionHistory(
-                    time_idx=max_idx + 1, 
+                    time_idx=max_idx, 
                     branch="Lipa", 
                     month=totals['month'], 
                     week_id=week_id, 
