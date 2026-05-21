@@ -4,16 +4,15 @@ from app import app, db, DailyProduction, ProductionHistory
 
 def generate_april_data():
     with app.app_context():
-        print("🌱 Starting April 2024 Daily & Monthly Seeding...")
+        print("🌱 Starting April 2026 Daily & Monthly Seeding...")
 
-        # 1. Define the timeframe (April 1 to April 30, 2024)
-        # Using 2024 perfectly aligns with Weeks 14-17 shown in your CSV image
-        start_date = date(2024, 4, 1)
+        # 1. Define the timeframe (April 1 to April 30, 2026)
+        start_date = date(2026, 4, 1)
         days_in_april = 30
 
-        # Clean up any existing April 2024 data to prevent duplicates if run multiple times
+        # Clean up any existing April 2026 data to prevent duplicates if run multiple times
         DailyProduction.query.filter(db.extract('month', DailyProduction.date) == 4, 
-                                     db.extract('year', DailyProduction.date) == 2024).delete(synchronize_session=False)
+                                     db.extract('year', DailyProduction.date) == 2026).delete(synchronize_session=False)
         db.session.commit()
 
         weekly_data = {}
@@ -61,7 +60,7 @@ def generate_april_data():
             weekly_data[week_id]['usable'] += good
 
         db.session.commit()
-        print(f"✅ Created 30 daily logs for April.")
+        print(f"✅ Created 30 daily logs for April 2026.")
 
         # 3. Generate the Weekly Master Records (ProductionHistory)
         for week_id, totals in weekly_data.items():
@@ -93,7 +92,7 @@ def generate_april_data():
 
         db.session.commit()
         print(f"✅ Rolled up daily data into {len(weekly_data)} Weekly Master Records.")
-        print("🎉 April Seeding Complete!")
+        print("🎉 April 2026 Seeding Complete!")
 
 if __name__ == '__main__':
     generate_april_data()
