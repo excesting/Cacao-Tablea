@@ -6,3 +6,6 @@ ultralytics
 pandas
 pytorch-forecasting
 torch
+torchvision
+opencv-python-headless
+timm
