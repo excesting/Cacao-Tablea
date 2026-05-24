@@ -12,13 +12,20 @@ try:
     from ultralytics import YOLO
 except ImportError:
     print("⚠️ Ultralytics not found. YOLO will be disabled.")
-    YOLO = None
+
+# --- IMPORT NEW CLASSIFIER LIBS ---
+import torch
+import torch.nn.functional as F
+from torchvision import transforms
+try:
+    import timm
+except ImportError:
+    print("⚠️ timm not found. Classifier will be disabled.")
 
 # --- IMPORT PYTORCH FORECASTING ---
 try:
     from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
     from pytorch_forecasting.metrics import QuantileLoss
-    import torch
     import torch.nn as nn
     PYTORCH_AVAILABLE = True
 except ImportError:
@@ -30,11 +37,8 @@ except ImportError:
 # ============================================================
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# Fetch the database URL from Railway's environment variables. 
-# If it doesn't exist (e.g., running locally), fallback to SQLite.
 db_url = os.environ.get("DATABASE_URL", "sqlite:///tableascan.db")
 
-# SQLAlchemy 1.4+ requires 'postgresql://' instead of 'postgres://'
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
@@ -61,7 +65,6 @@ class ScanLog(db.Model):
         self.bloom_pcs = bloom_pcs
         self.defect_pcs = defect_pcs
         self.yield_percentage = (good_pcs / total_scanned * 100) if total_scanned > 0 else 0.0
-        # UPDATED: Changed from 215.0 to 117.0 based on your new factory requirements
         self.cacao_used_kg = (total_scanned / 117.0) * 1.5
 
 class DailyProduction(db.Model):
@@ -81,10 +84,10 @@ class DailyProduction(db.Model):
 class ProductionHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     time_idx = db.Column(db.Integer, nullable=False, unique=True)
-    week_id = db.Column(db.String(20), nullable=False, default="Unknown") # For matching logic
+    week_id = db.Column(db.String(20), nullable=False, default="Unknown")
     branch = db.Column(db.String(50), nullable=False)
     month = db.Column(db.String(20), nullable=False)
-    event_name = db.Column(db.String(100), default="None") # For special events/promos
+    event_name = db.Column(db.String(100), default="None")
     sales_pcs = db.Column(db.Integer, nullable=False, default=0)
     total_produced = db.Column(db.Integer, nullable=False, default=0)
     net_usable_output = db.Column(db.Integer, nullable=False, default=0)
@@ -96,17 +99,78 @@ with app.app_context():
 # ============================================================
 # 2. INITIALIZE AI MODELS
 # ============================================================
-yolo_model = None
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+detector_model = None
+classifier_model = None
+clf_names = []
+clf_tf = None
 tft_model = None
 tft_dataset = None
 
-if YOLO is not None:
-    try:
-        yolo_model = YOLO("best.pt")
-        print("✅ YOLO Model Loaded")
-    except Exception as e:
-        print(f"⚠️ YOLO Model Error: {e}")
+# --- LOAD VISION MODELS ---
+# Expected files in the same folder as app.py:
+#   best_detector.pt    → YOLOv8  (finds WHERE tablets are)
+#   best_classifier.pth → EfficientNet-B3 (classifies WHAT each tablet is)
 
+DETECTOR_PATH   = os.path.join(os.path.dirname(__file__), "best_detector.pt")
+CLASSIFIER_PATH = os.path.join(os.path.dirname(__file__), "best_classifier.pth")
+
+# Confidence thresholds
+DET_CONF  = 0.40   # YOLOv8 detection confidence  (lower = finds more tablets)
+CLF_CONF  = 0.50   # EfficientNet classification   (below = marked uncertain)
+
+# BGR colors for bounding boxes per class
+BOX_COLORS = {
+    "good":      (50,  200, 50),    # green
+    "cracked":   (50,  50,  220),   # red
+    "fat bloom": (50,  180, 255),   # orange
+    "uncertain": (180, 180, 180),   # grey
+}
+
+try:
+    # 1. Load YOLOv8 Detector (single class: tablet)
+    if not os.path.exists(DETECTOR_PATH):
+        raise FileNotFoundError(f"Detector not found: {DETECTOR_PATH}")
+    detector_model = YOLO(DETECTOR_PATH)
+    print(f"✅ Detector loaded  → {DETECTOR_PATH}")
+
+    # 2. Load EfficientNet-B3 Classifier
+    if not os.path.exists(CLASSIFIER_PATH):
+        raise FileNotFoundError(f"Classifier not found: {CLASSIFIER_PATH}")
+
+    # weights_only=False required for checkpoint dicts (model_state + metadata)
+    ckpt = torch.load(CLASSIFIER_PATH, map_location=DEVICE, weights_only=False)
+    clf_names  = ckpt['class_names']          # ['Cracked', 'Fat Bloom', 'Good']
+    saved_acc  = ckpt.get('val_acc', 'N/A')
+
+    classifier_model = timm.create_model(
+        ckpt.get('model_name', 'efficientnet_b3'),
+        pretrained=False,
+        num_classes=len(clf_names)
+    )
+    classifier_model.load_state_dict(ckpt['model_state'])
+    classifier_model.eval().to(DEVICE)
+
+    # Inference transform — matches training val_tf exactly
+    clf_tf = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225]),
+    ])
+    print(f"✅ Classifier loaded → {CLASSIFIER_PATH}")
+    print(f"   Classes   : {clf_names}")
+    print(f"   Val acc   : {saved_acc:.3f}" if isinstance(saved_acc, float) else f"   Val acc   : {saved_acc}")
+    print(f"   Device    : {DEVICE}")
+
+except Exception as e:
+    print(f"⚠️  Vision model loading failed: {e}")
+    print(f"   Make sure best_detector.pt and best_classifier.pth")
+    print(f"   are in the same folder as app.py")
+
+# --- LOAD FORECASTING MODEL ---
 if PYTORCH_AVAILABLE:
     original_load = torch.load
     try:
@@ -116,7 +180,7 @@ if PYTORCH_AVAILABLE:
             return original_load(*args, **kwargs)
 
         torch.load = global_safe_load
-        tft_dataset = TimeSeriesDataSet.load("tft_dataset_v4.pkl")
+        tft_dataset = torch.load("tablea_training_dataset.pt")
 
         def surgical_load(*args, **kwargs):
             kwargs['weights_only'] = False
@@ -130,7 +194,7 @@ if PYTORCH_AVAILABLE:
             return ckpt
 
         torch.load = surgical_load
-        tft_model = TemporalFusionTransformer.load_from_checkpoint("tft_model_v4.ckpt")
+        tft_model = TemporalFusionTransformer.load_from_checkpoint("tablea_tft_best.ckpt")
         tft_model.eval()
         torch.load = original_load
         print("✅ TFT Forecast Model Loaded Successfully!")
@@ -139,7 +203,7 @@ if PYTORCH_AVAILABLE:
         torch.load = original_load
 
 # ============================================================
-# 3. HELPER: DUMMY FORECAST FALLBACK
+# 3. HELPER FUNCTIONS
 # ============================================================
 def _dummy_forecast(reason):
     return jsonify({
@@ -152,9 +216,29 @@ def _dummy_forecast(reason):
         "status": f"Fallback: {reason}"
     })
 
+def bucket_event(raw: str) -> str:
+    s = str(raw).lower() if raw else ""
+    if 'valentine' in s: return 'Valentine'
+    if 'christmas' in s: return 'Christmas'
+    if 'wedding' in s or 'baptism' in s or 'reunion' in s: return 'Social_Event'
+    if 'company' in s or 'corporate' in s or 'factory' in s: return 'Corporate'
+    if 'pasalubong' in s: return 'Pasalubong'
+    return 'Regular'
+
 # ============================================================
 # 4. PAGE ROUTES
 # ============================================================
+
+@app.route('/api/model_status')
+def model_status():
+    """Returns whether the vision models are loaded and ready."""
+    return jsonify({
+        "detector":   detector_model is not None,
+        "classifier": classifier_model is not None,
+        "classes":    clf_names,
+        "device":     str(DEVICE),
+        "ready":      detector_model is not None and classifier_model is not None,
+    })
 @app.route('/')
 def home():
     return render_template('home.html', current_page='home')
@@ -261,8 +345,6 @@ def add_sales():
     try:
         date_str = request.form.get('sales_date')
         sales = int(request.form.get('weekly_sales', 0))
-        
-        # Capture the new Event Name from the form
         event_name = request.form.get('event_name', '').strip()
         if not event_name:
             event_name = "None"
@@ -275,7 +357,6 @@ def add_sales():
         history = ProductionHistory.query.filter_by(week_id=week_id).first()
         
         if not history:
-            # If creating a brand new week record
             max_idx = db.session.query(db.func.max(ProductionHistory.time_idx)).scalar() or 0
             history = ProductionHistory(
                 time_idx=max_idx + 1, branch="Lipa", month=month_name, 
@@ -283,7 +364,6 @@ def add_sales():
             )
             db.session.add(history)
         else:
-            # If the week already exists, just update the event and sales
             if event_name != "None":
                 history.event_name = event_name
 
@@ -300,25 +380,19 @@ def add_sales():
 @app.route('/api/stats')
 def get_stats():
     try:
-        # 1. Fetch the last 4 weeks of Weekly AI Records for the Yield calculation
-        # Using net_usable_output / total_produced from history provides the weekly yield trend.
         recent_history = ProductionHistory.query.order_by(ProductionHistory.time_idx.desc()).limit(4).all()
         
         if recent_history:
             total_produced = sum(w.total_produced for w in recent_history)
             total_usable = sum(w.net_usable_output for w in recent_history)
-            
-            # Use 4-week rolling average
             current_yield = (total_usable / total_produced * 100) if total_produced > 0 else 0.0
-            total_scanned = total_produced # Displaying total of last 4 weeks
+            total_scanned = total_produced 
             good_pcs = total_usable
         else:
-            # Fallback if history is empty
             current_yield = 0.0
             total_scanned = 0
             good_pcs = 0
 
-        # We still pull raw defect counts from ScanLog for the daily view (Detect page)
         cracks = db.session.query(db.func.sum(ScanLog.crack_pcs)).scalar() or 0
         bloom = db.session.query(db.func.sum(ScanLog.bloom_pcs)).scalar() or 0
         cacao_used = db.session.query(db.func.sum(ScanLog.cacao_used_kg)).scalar() or 0.0
@@ -343,75 +417,82 @@ def get_forecast():
         history_records = (
             db.session.query(ProductionHistory)
             .order_by(ProductionHistory.time_idx.desc())
-            .limit(16)
+            .limit(24)
             .all()
         )
 
-        if len(history_records) < 16:
-            return _dummy_forecast(f"Only {len(history_records)} DB rows found. Need 16.")
+        if len(history_records) < 24:
+            return _dummy_forecast(f"Only {len(history_records)} DB rows found. Need 24 for the new encoder length.")
 
         history_records.reverse()
-
         data = []
         historical_sales = []
+        
         for r in history_records:
             historical_sales.append(r.sales_pcs)
-            branch = str(r.branch).strip() if r.branch else "Lipa"
-            month = str(r.month).strip() if (r.month and str(r.month).lower() != 'nan') else "January"
+            try:
+                year, w_str = r.week_id.split('-W')
+                year = int(year)
+                global_week = int(w_str)
+            except:
+                year, global_week = 2024, 1
+                
+            abs_week = ((year - 2022) * 48) + global_week
+            
             data.append({
-                "time_idx": int(r.time_idx),
-                "Branch": branch,
-                "Month": month,
-                "Sales (pcs)": float(r.sales_pcs or 0),
-                "Total Produced": float(r.total_produced or 0),
-                "Net Usable Output": float(r.net_usable_output or 0),
-                "Defect Rate": float(r.defect_rate or 0)
+                "Absolute Week": abs_week,
+                "Product_Line": "Tablea_Overall",
+                "Sales": float(r.sales_pcs or 0),
+                "Demand (D)": float(r.sales_pcs or 0), 
+                "Event_Bucket": bucket_event(r.event_name),
+                "Month": str(r.month).strip() if r.month else "January",
+                "Week_in_Month": str((global_week % 4) + 1),
             })
 
-        df_history = pd.DataFrame(data)
-        last_idx = df_history["time_idx"].max()
-        last_month = df_history["Month"].iloc[-1]
-        last_branch = df_history["Branch"].iloc[-1]
+        df = pd.DataFrame(data)
+        recent_avg_demand = df['Sales'].tail(4).mean()
+        last_row = df.iloc[-1]
+        last_abs_week = int(last_row['Absolute Week'])
 
-        future_data = [
-            {
-                "time_idx": int(last_idx + i),
-                "Branch": last_branch,
-                "Month": last_month,
-                "Sales (pcs)": 0.0,
-                "Total Produced": 0.0,
-                "Net Usable Output": 0.0,
-                "Defect Rate": 0.0
-            }
-            for i in range(1, 5)
-        ]
+        future_data = []
+        for i in range(1, 5):
+            future_data.append({
+                "Absolute Week": last_abs_week + i,
+                "Product_Line": "Tablea_Overall",
+                "Sales": 0.0,
+                "Demand (D)": recent_avg_demand,
+                "Event_Bucket": "Regular",
+                "Month": last_row['Month'], 
+                "Week_in_Month": str(((int(last_row['Week_in_Month']) + i - 1) % 4) + 1),
+            })
 
         df_future = pd.DataFrame(future_data)
-        df_combined = pd.concat([df_history, df_future], ignore_index=True)
-        df_combined["time_idx"] = range(len(df_combined))
+        df_combined = pd.concat([df, df_future], ignore_index=True)
+
+        df_combined['Sales_Lag1']      = df_combined['Sales'].shift(1).bfill()
+        df_combined['Sales_Lag4']      = df_combined['Sales'].shift(4).bfill()
+        df_combined['Rolling_Mean_4']  = df_combined['Sales'].shift(1).rolling(4, min_periods=1).mean().bfill()
+        df_combined['Rolling_Mean_12'] = df_combined['Sales'].shift(1).rolling(12, min_periods=1).mean().bfill()
 
         predict_dataset = TimeSeriesDataSet.from_dataset(
             tft_dataset, df_combined, predict=True, stop_randomization=True
         )
         dataloader = predict_dataset.to_dataloader(train=False, batch_size=1)
 
-        output = tft_model.predict(dataloader)
-        predicted_demand = [int(val) for val in output.flatten().tolist()]
+        future_preds = tft_model.predict(dataloader, mode='quantiles')
+        predicted_demand = [int(val) for val in future_preds[0, :, 3].flatten().tolist()]
 
-        historical_defects = df_history["Defect Rate"].tolist()
-        historical_labels = [f"Week {int(idx)}" for idx in df_history["time_idx"].tolist()]
-
-        last_4_output = df_history["Net Usable Output"].tail(4).tolist()
+        historical_labels = [f"Week {int(idx)}" for idx in df_combined["Absolute Week"].iloc[:-4].tolist()]
+        last_4_output = df["Sales"].tail(4).tolist()
         avg_supply = int(sum(last_4_output) / len(last_4_output)) if last_4_output else 48500
-        dynamic_supply = [avg_supply] * 4
 
         return jsonify({
             "labels": ["Next Wk 1", "Next Wk 2", "Next Wk 3", "Next Wk 4"],
             "expected_demand": predicted_demand,
-            "projected_supply": dynamic_supply,
+            "projected_supply": [avg_supply] * 4,
             "historical_last_4_weeks": historical_sales[-4:],
-            "historical_defects": historical_defects,
-            "historical_time": historical_labels,
+            "historical_time": historical_labels[-8:],
+            "historical_defects": [], 
             "status": "AI Prediction Success"
         })
 
@@ -428,36 +509,157 @@ def upload_image():
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
-
-    if yolo_model is None:
-        return jsonify({"error": "YOLO model not loaded"}), 503
+    if detector_model is None or classifier_model is None:
+        return jsonify({
+            "error": "Vision models not loaded. "
+                     "Make sure best_detector.pt and best_classifier.pth "
+                     "are in the same folder as app.py."
+        }), 503
 
     try:
+        # ── 1. Decode image ───────────────────────────────────────
         file_bytes = np.frombuffer(file.read(), np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        results = yolo_model(img, conf=0.25)
+        if img is None:
+            return jsonify({"error": "Could not decode image file."}), 400
+        img_h, img_w = img.shape[:2]
+        annotated   = img.copy()
 
-        counts = {"good": 0, "fat_bloom": 0, "crack": 0, "defect": 0}
-        for r in results:
-            img = r.plot()
-            for c in r.boxes.cls:
-                name = r.names[int(c)].lower().strip()
-                if name == "good":
-                    counts["good"] += 1
-                elif name == "cracked":
-                    counts["crack"] += 1
-                elif name == "fat bloom":
-                    counts["fat_bloom"] += 1
-                else:
-                    counts["defect"] += 1
+        # ── 2. Stage 1 — YOLOv8 detects all tablets ──────────────
+        det_results = detector_model(img, conf=DET_CONF, verbose=False)[0]
+        boxes       = det_results.boxes.xyxy.cpu().numpy()   # (N, 4)
+        det_confs   = det_results.boxes.conf.cpu().numpy()   # (N,)
 
-        _, buffer = cv2.imencode('.jpg', img)
+        counts      = {"good": 0, "fat_bloom": 0, "crack": 0,
+                       "defect": 0, "uncertain": 0}
+        detections  = []   # detailed per-tablet results for frontend
+
+        # ── 3. Stage 2 — EfficientNet classifies each crop ───────
+        for i, (box, det_score) in enumerate(zip(boxes, det_confs)):
+            x1, y1, x2, y2 = map(int, box[:4])
+
+            # 5% padding — matches training crop extraction exactly
+            pw  = int((x2 - x1) * 0.05)
+            ph  = int((y2 - y1) * 0.05)
+            cx1 = max(0,     x1 - pw)
+            cy1 = max(0,     y1 - ph)
+            cx2 = min(img_w, x2 + pw)
+            cy2 = min(img_h, y2 + ph)
+
+            crop = img[cy1:cy2, cx1:cx2]
+            if crop.size == 0 or (cx2 - cx1) < 10 or (cy2 - cy1) < 10:
+                continue
+
+            # RGB conversion + inference transform
+            rgb    = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            tensor = clf_tf(rgb).unsqueeze(0).to(DEVICE)
+
+            with torch.no_grad():
+                probs = F.softmax(classifier_model(tensor), dim=1).squeeze(0)
+
+            clf_score, pred_idx = probs.max(0)
+            clf_score  = clf_score.item()
+            class_label = clf_names[pred_idx.item()]       # e.g. "Cracked"
+            class_key   = class_label.lower().strip()      # e.g. "cracked"
+
+            # Low-confidence → mark as uncertain
+            if clf_score < CLF_CONF:
+                class_key   = "uncertain"
+                class_label = "Uncertain"
+
+            # ── Update counts ─────────────────────────────────────
+            if class_key == "good":
+                counts["good"] += 1
+            elif class_key == "cracked":
+                counts["crack"] += 1
+            elif class_key == "fat bloom":
+                counts["fat_bloom"] += 1
+            else:
+                counts["uncertain"] += 1
+                counts["defect"]    += 1   # uncertain counts as defect
+
+            # ── Draw bounding box ─────────────────────────────────
+            color         = BOX_COLORS.get(class_key, (180, 180, 180))
+            box_thickness = max(2, int(min(img_w, img_h) / 300))
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, box_thickness)
+
+            # Label background + text
+            display_label = f"#{i+1} {class_label} {clf_score:.0%}"
+            font_scale    = max(0.4, min(0.7, (x2 - x1) / 250))
+            (tw, th), _   = cv2.getTextSize(
+                display_label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
+            )
+            lx1 = x1
+            ly1 = max(0, y1 - th - 8)
+            cv2.rectangle(annotated,
+                          (lx1, ly1), (lx1 + tw + 6, ly1 + th + 8),
+                          color, -1)
+            cv2.putText(annotated, display_label,
+                        (lx1 + 3, ly1 + th + 3),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                        (255, 255, 255), 1, cv2.LINE_AA)
+
+            # Per-tablet detail for frontend
+            detections.append({
+                "id":         i + 1,
+                "class":      class_label,
+                "confidence": round(clf_score, 3),
+                "det_conf":   round(float(det_score), 3),
+                "box":        [x1, y1, x2, y2],
+                "all_probs":  {
+                    c: round(float(p), 3)
+                    for c, p in zip(clf_names, probs.cpu().numpy())
+                },
+            })
+
+        # ── 4. Summary panel overlay ──────────────────────────────
+        total = sum(counts.values()) - counts["uncertain"]  # don't double-count
+        total = len(detections)
+        lines = [
+            f"Total : {total}",
+            f"Good  : {counts['good']}",
+            f"Crack : {counts['crack']}",
+            f"Bloom : {counts['fat_bloom']}",
+        ]
+        if counts["uncertain"] > 0:
+            lines.append(f"Unsure: {counts['uncertain']}")
+
+        panel_w = 180
+        panel_h = 20 + len(lines) * 24
+        overlay = annotated.copy()
+        cv2.rectangle(overlay, (10, 10),
+                      (10 + panel_w, 10 + panel_h), (20, 20, 20), -1)
+        annotated = cv2.addWeighted(overlay, 0.65, annotated, 0.35, 0)
+
+        label_colors = {
+            "Total": (255, 255, 255),
+            "Good":  BOX_COLORS["good"],
+            "Crack": BOX_COLORS["cracked"],
+            "Bloom": BOX_COLORS["fat bloom"],
+            "Unsure":BOX_COLORS["uncertain"],
+        }
+        for j, line in enumerate(lines):
+            key   = line.split(":")[0].strip()
+            color = label_colors.get(key, (255, 255, 255))
+            cv2.putText(annotated, line,
+                        (18, 30 + j * 24),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                        color, 1, cv2.LINE_AA)
+
+        # ── 5. Encode and return ──────────────────────────────────
+        _, buffer = cv2.imencode('.jpg', annotated,
+                                 [cv2.IMWRITE_JPEG_QUALITY, 92])
         return jsonify({
-            "image": base64.b64encode(buffer).decode('utf-8'),
-            "counts": counts
+            "image":      base64.b64encode(buffer).decode('utf-8'),
+            "counts":     counts,
+            "total":      total,
+            "detections": detections,   # per-tablet detail
         })
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({"error": str(e),
+                        "trace": traceback.format_exc()}), 500
 
 @app.route('/api/confirm_scan', methods=['POST'])
 def confirm_scan():
