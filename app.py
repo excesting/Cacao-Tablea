@@ -13,7 +13,7 @@ try:
 except ImportError:
     print("⚠️ Ultralytics not found. YOLO will be disabled.")
 
-# --- IMPORT NEW CLASSIFIER LIBS ---
+# --- IMPORT CLASSIFIER LIBS ---
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
@@ -44,6 +44,20 @@ if db_url.startswith("postgres://"):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Connection pool settings for Railway Postgres stability
+if db_url.startswith("postgresql"):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        "pool_pre_ping": True,
+        "pool_recycle":  280,
+        "pool_timeout":  30,
+        "pool_size":     5,
+        "max_overflow":  2,
+        "connect_args":  {"sslmode": "require", "connect_timeout": 10},
+    }
+else:
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True}
+
 db = SQLAlchemy(app)
 
 # --- DATABASE MODELS ---
@@ -72,8 +86,8 @@ class DailyProduction(db.Model):
     date = db.Column(db.Date, nullable=False, unique=True)
     week_id = db.Column(db.String(20), nullable=False)
     month_name = db.Column(db.String(20), nullable=False)
-    
-    sales_pcs = db.Column(db.Integer, default=0) 
+
+    sales_pcs = db.Column(db.Integer, default=0)
     total_produced = db.Column(db.Integer, default=0)
     total_defects = db.Column(db.Integer, default=0)
     cracked_count = db.Column(db.Integer, default=0)
@@ -94,7 +108,11 @@ class ProductionHistory(db.Model):
     defect_rate = db.Column(db.Float, nullable=False, default=0.0)
 
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+        print("✅ Database tables ready")
+    except Exception as e:
+        print(f"⚠️  db.create_all() warning: {e}")
 
 # ============================================================
 # 2. INITIALIZE AI MODELS
@@ -110,15 +128,15 @@ tft_dataset = None
 
 # --- LOAD VISION MODELS ---
 # Expected files in the same folder as app.py:
-#   best_detector.pt    → YOLOv8  (finds WHERE tablets are)
-#   best_classifier.pth → EfficientNet-B3 (classifies WHAT each tablet is)
+#   best_detector.pt    → YOLO  (finds WHERE tablets are)
+#   best_classifier.pth → EfficientNet-B4 (classifies WHAT each tablet is)
 
-DETECTOR_PATH   = os.path.join(os.path.dirname(__file__), "best_detector.pt")
-CLASSIFIER_PATH = os.path.join(os.path.dirname(__file__), "best_classifier.pth")
+DETECTOR_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "best_detector.pt")
+CLASSIFIER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "best_classifier.pth")
 
 # Confidence thresholds
-DET_CONF  = 0.40   # YOLOv8 detection confidence  (lower = finds more tablets)
-CLF_CONF  = 0.50   # EfficientNet classification   (below = marked uncertain)
+DET_CONF  = 0.40   # detection confidence  (lower = finds more tablets)
+CLF_CONF  = 0.50   # classification        (below = marked uncertain)
 
 # BGR colors for bounding boxes per class
 BOX_COLORS = {
@@ -129,13 +147,13 @@ BOX_COLORS = {
 }
 
 try:
-    # 1. Load YOLOv8 Detector (single class: tablet)
+    # 1. Load Detector (single class: tablet)
     if not os.path.exists(DETECTOR_PATH):
         raise FileNotFoundError(f"Detector not found: {DETECTOR_PATH}")
     detector_model = YOLO(DETECTOR_PATH)
     print(f"✅ Detector loaded  → {DETECTOR_PATH}")
 
-    # 2. Load EfficientNet-B3 Classifier
+    # 2. Load EfficientNet-B4 Classifier
     if not os.path.exists(CLASSIFIER_PATH):
         raise FileNotFoundError(f"Classifier not found: {CLASSIFIER_PATH}")
 
@@ -145,24 +163,29 @@ try:
     saved_acc  = ckpt.get('val_acc', 'N/A')
 
     classifier_model = timm.create_model(
-        ckpt.get('model_name', 'efficientnet_b3'),
+        ckpt.get('model_name', 'efficientnet_b4'),   # default now B4
         pretrained=False,
         num_classes=len(clf_names)
     )
     classifier_model.load_state_dict(ckpt['model_state'])
     classifier_model.eval().to(DEVICE)
 
-    # Inference transform — matches training val_tf exactly
+    # Inference transform — matches training val_tf exactly (256px for B4)
     clf_tf = transforms.Compose([
         transforms.ToPILImage(),
-        transforms.Resize((224, 224)),
+        transforms.Resize((256, 256)),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406],
                              [0.229, 0.224, 0.225]),
     ])
     print(f"✅ Classifier loaded → {CLASSIFIER_PATH}")
+    print(f"   Model     : {ckpt.get('model_name', 'efficientnet_b4')}")
     print(f"   Classes   : {clf_names}")
     print(f"   Val acc   : {saved_acc:.3f}" if isinstance(saved_acc, float) else f"   Val acc   : {saved_acc}")
+    if 'cracked_f1' in ckpt:
+        print(f"   Crack F1  : {ckpt['cracked_f1']:.3f}")
+        print(f"   Bloom F1  : {ckpt['fat_bloom_f1']:.3f}")
+        print(f"   Good F1   : {ckpt['good_f1']:.3f}")
     print(f"   Device    : {DEVICE}")
 
 except Exception as e:
@@ -228,7 +251,6 @@ def bucket_event(raw: str) -> str:
 # ============================================================
 # 4. PAGE ROUTES
 # ============================================================
-
 @app.route('/api/model_status')
 def model_status():
     """Returns whether the vision models are loaded and ready."""
@@ -239,6 +261,7 @@ def model_status():
         "device":     str(DEVICE),
         "ready":      detector_model is not None and classifier_model is not None,
     })
+
 @app.route('/')
 def home():
     return render_template('home.html', current_page='home')
@@ -257,12 +280,8 @@ def logs():
     weekly_logs = ProductionHistory.query.order_by(ProductionHistory.time_idx.desc()).limit(8).all()
 
     today = datetime.utcnow().date()
-    start_of_day = datetime.combine(today, datetime.min.time())
-    end_of_day = datetime.combine(today, datetime.max.time())
-
     today_scans = ScanLog.query.filter(
-        ScanLog.timestamp >= start_of_day,
-        ScanLog.timestamp <= end_of_day
+        db.func.date(ScanLog.timestamp) == today
     ).all()
 
     today_produced = sum(s.total_scanned for s in today_scans)
@@ -326,7 +345,7 @@ def add_log():
         if not history:
             max_idx = db.session.query(db.func.max(ProductionHistory.time_idx)).scalar() or 0
             history = ProductionHistory(
-                time_idx=max_idx + 1, branch="Lipa", month=month_name, 
+                time_idx=max_idx + 1, branch="Lipa", month=month_name,
                 week_id=week_id, event_name="None", sales_pcs=0
             )
             db.session.add(history)
@@ -338,6 +357,7 @@ def add_log():
 
         return redirect(url_for('logs'))
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/api/add_sales', methods=['POST'])
@@ -355,11 +375,11 @@ def add_sales():
         month_name = date_obj.strftime('%B')
 
         history = ProductionHistory.query.filter_by(week_id=week_id).first()
-        
+
         if not history:
             max_idx = db.session.query(db.func.max(ProductionHistory.time_idx)).scalar() or 0
             history = ProductionHistory(
-                time_idx=max_idx + 1, branch="Lipa", month=month_name, 
+                time_idx=max_idx + 1, branch="Lipa", month=month_name,
                 week_id=week_id, event_name=event_name, total_produced=0, net_usable_output=0, defect_rate=0.0
             )
             db.session.add(history)
@@ -372,6 +392,7 @@ def add_sales():
 
         return redirect(url_for('logs'))
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 # ============================================================
@@ -381,12 +402,12 @@ def add_sales():
 def get_stats():
     try:
         recent_history = ProductionHistory.query.order_by(ProductionHistory.time_idx.desc()).limit(4).all()
-        
+
         if recent_history:
             total_produced = sum(w.total_produced for w in recent_history)
             total_usable = sum(w.net_usable_output for w in recent_history)
             current_yield = (total_usable / total_produced * 100) if total_produced > 0 else 0.0
-            total_scanned = total_produced 
+            total_scanned = total_produced
             good_pcs = total_usable
         else:
             current_yield = 0.0
@@ -427,8 +448,8 @@ def get_forecast():
         history_records.reverse()
         data = []
         historical_sales = []
-        
-        for r in history_records:
+
+        for seq_idx, r in enumerate(history_records):
             historical_sales.append(r.sales_pcs)
             try:
                 year, w_str = r.week_id.split('-W')
@@ -436,14 +457,16 @@ def get_forecast():
                 global_week = int(w_str)
             except:
                 year, global_week = 2024, 1
-                
-            abs_week = ((year - 2022) * 48) + global_week
             
+            # Use a sequential index (0,1,2,3...) to guarantee
+            # no gaps between time steps — the TFT requires this.
+            abs_week = seq_idx
+
             data.append({
                 "Absolute Week": abs_week,
                 "Product_Line": "Tablea_Overall",
                 "Sales": float(r.sales_pcs or 0),
-                "Demand (D)": float(r.sales_pcs or 0), 
+                "Demand (D)": float(r.sales_pcs or 0),
                 "Event_Bucket": bucket_event(r.event_name),
                 "Month": str(r.month).strip() if r.month else "January",
                 "Week_in_Month": str((global_week % 4) + 1),
@@ -462,7 +485,7 @@ def get_forecast():
                 "Sales": 0.0,
                 "Demand (D)": recent_avg_demand,
                 "Event_Bucket": "Regular",
-                "Month": last_row['Month'], 
+                "Month": last_row['Month'],
                 "Week_in_Month": str(((int(last_row['Week_in_Month']) + i - 1) % 4) + 1),
             })
 
@@ -475,7 +498,9 @@ def get_forecast():
         df_combined['Rolling_Mean_12'] = df_combined['Sales'].shift(1).rolling(12, min_periods=1).mean().bfill()
 
         predict_dataset = TimeSeriesDataSet.from_dataset(
-            tft_dataset, df_combined, predict=True, stop_randomization=True
+            tft_dataset, df_combined, predict=True,
+            stop_randomization=True,
+            allow_missing_timesteps=True,   # ← allows gaps between weeks
         )
         dataloader = predict_dataset.to_dataloader(train=False, batch_size=1)
 
@@ -492,7 +517,7 @@ def get_forecast():
             "projected_supply": [avg_supply] * 4,
             "historical_last_4_weeks": historical_sales[-4:],
             "historical_time": historical_labels[-8:],
-            "historical_defects": [], 
+            "historical_defects": [],
             "status": "AI Prediction Success"
         })
 
@@ -525,7 +550,7 @@ def upload_image():
         img_h, img_w = img.shape[:2]
         annotated   = img.copy()
 
-        # ── 2. Stage 1 — YOLOv8 detects all tablets ──────────────
+        # ── 2. Stage 1 — Detector finds all tablets ──────────────
         det_results = detector_model(img, conf=DET_CONF, verbose=False)[0]
         boxes       = det_results.boxes.xyxy.cpu().numpy()   # (N, 4)
         det_confs   = det_results.boxes.conf.cpu().numpy()   # (N,)
@@ -558,9 +583,27 @@ def upload_image():
                 probs = F.softmax(classifier_model(tensor), dim=1).squeeze(0)
 
             clf_score, pred_idx = probs.max(0)
-            clf_score  = clf_score.item()
-            class_label = clf_names[pred_idx.item()]       # e.g. "Cracked"
-            class_key   = class_label.lower().strip()      # e.g. "cracked"
+            clf_score   = clf_score.item()
+            class_label = clf_names[pred_idx.item()]
+            class_key   = class_label.lower().strip()
+
+            # ── Cracked conservatism ──────────────────────────────
+            # The model tends to over-predict Cracked, sometimes
+            # labeling Good tablets as Cracked. Require Cracked to
+            # win clearly before accepting it — otherwise fall back
+            # to the next most likely class.
+            cracked_idx = clf_names.index('Cracked')
+            good_idx    = clf_names.index('Good')
+            cracked_prob = probs[cracked_idx].item()
+            good_prob    = probs[good_idx].item()
+
+            if class_key == "cracked":
+                # If Cracked is not strongly confident AND Good is close behind,
+                # prefer Good instead (reduces false cracks).
+                if cracked_prob < 0.65 and good_prob > (cracked_prob - 0.20):
+                    class_label = 'Good'
+                    class_key   = 'good'
+                    clf_score   = good_prob
 
             # Low-confidence → mark as uncertain
             if clf_score < CLF_CONF:
@@ -613,7 +656,6 @@ def upload_image():
             })
 
         # ── 4. Summary panel overlay ──────────────────────────────
-        total = sum(counts.values()) - counts["uncertain"]  # don't double-count
         total = len(detections)
         lines = [
             f"Total : {total}",
@@ -679,7 +721,8 @@ def confirm_scan():
         return jsonify({"status": "success", "message": "Logged successfully"})
 
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
