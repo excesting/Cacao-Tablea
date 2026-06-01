@@ -434,34 +434,35 @@ def get_forecast():
     try:
         if tft_model is None or tft_dataset is None:
             return _dummy_forecast("TFT Model or Dataset not loaded")
-
+ 
         history_records = (
             db.session.query(ProductionHistory)
             .order_by(ProductionHistory.time_idx.desc())
             .limit(24)
             .all()
         )
-
+ 
         if len(history_records) < 24:
             return _dummy_forecast(f"Only {len(history_records)} DB rows found. Need 24 for the new encoder length.")
-
+ 
         history_records.reverse()
         data = []
         historical_sales = []
-
-        for seq_idx, r in enumerate(history_records):
+        historical_defect_list = []          # ← NEW: collect defect rates
+ 
+        for r in history_records:
             historical_sales.append(r.sales_pcs)
+            historical_defect_list.append(round(r.defect_rate, 4))   # ← NEW
+ 
             try:
                 year, w_str = r.week_id.split('-W')
                 year = int(year)
                 global_week = int(w_str)
             except:
                 year, global_week = 2024, 1
-            
-            # Use a sequential index (0,1,2,3...) to guarantee
-            # no gaps between time steps — the TFT requires this.
-            abs_week = seq_idx
-
+ 
+            abs_week = ((year - 2022) * 48) + global_week
+ 
             data.append({
                 "Absolute Week": abs_week,
                 "Product_Line": "Tablea_Overall",
@@ -471,12 +472,12 @@ def get_forecast():
                 "Month": str(r.month).strip() if r.month else "January",
                 "Week_in_Month": str((global_week % 4) + 1),
             })
-
+ 
         df = pd.DataFrame(data)
         recent_avg_demand = df['Sales'].tail(4).mean()
         last_row = df.iloc[-1]
         last_abs_week = int(last_row['Absolute Week'])
-
+ 
         future_data = []
         for i in range(1, 5):
             future_data.append({
@@ -488,39 +489,39 @@ def get_forecast():
                 "Month": last_row['Month'],
                 "Week_in_Month": str(((int(last_row['Week_in_Month']) + i - 1) % 4) + 1),
             })
-
+ 
         df_future = pd.DataFrame(future_data)
         df_combined = pd.concat([df, df_future], ignore_index=True)
-
+ 
         df_combined['Sales_Lag1']      = df_combined['Sales'].shift(1).bfill()
         df_combined['Sales_Lag4']      = df_combined['Sales'].shift(4).bfill()
         df_combined['Rolling_Mean_4']  = df_combined['Sales'].shift(1).rolling(4, min_periods=1).mean().bfill()
         df_combined['Rolling_Mean_12'] = df_combined['Sales'].shift(1).rolling(12, min_periods=1).mean().bfill()
-
+ 
         predict_dataset = TimeSeriesDataSet.from_dataset(
             tft_dataset, df_combined, predict=True,
             stop_randomization=True,
-            allow_missing_timesteps=True,   # ← allows gaps between weeks
+            allow_missing_timesteps=True,        # ← NEW: fixes timestep gap error
         )
         dataloader = predict_dataset.to_dataloader(train=False, batch_size=1)
-
+ 
         future_preds = tft_model.predict(dataloader, mode='quantiles')
         predicted_demand = [int(val) for val in future_preds[0, :, 3].flatten().tolist()]
-
+ 
         historical_labels = [f"Week {int(idx)}" for idx in df_combined["Absolute Week"].iloc[:-4].tolist()]
         last_4_output = df["Sales"].tail(4).tolist()
         avg_supply = int(sum(last_4_output) / len(last_4_output)) if last_4_output else 48500
-
+ 
         return jsonify({
             "labels": ["Next Wk 1", "Next Wk 2", "Next Wk 3", "Next Wk 4"],
             "expected_demand": predicted_demand,
             "projected_supply": [avg_supply] * 4,
             "historical_last_4_weeks": historical_sales[-4:],
             "historical_time": historical_labels[-8:],
-            "historical_defects": [],
+            "historical_defects": historical_defect_list[-8:],   # ← NEW: real defect rates
             "status": "AI Prediction Success"
         })
-
+ 
     except Exception as e:
         return _dummy_forecast(f"AI Execution Error: {str(e)}")
 
