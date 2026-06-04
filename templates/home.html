@@ -1,71 +1,161 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="max-w-4xl mx-auto text-center mt-12 mb-20 animate-fade-in">
-    <h1 class="text-5xl md:text-7xl font-display font-bold tracking-tight text-bark-900 leading-tight mb-6">
-        Precision Quality <br/>
-        <span class="text-bark-500 italic">Redefined.</span>
-    </h1>
-    
-    <p class="text-lg md:text-xl text-bark-600 mb-10 max-w-2xl mx-auto font-light leading-relaxed">
-        Real-time YOLO object detection and multi-horizon demand forecasting.
-    </p>
-    
-    <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-        <a href="{{ url_for('detect') }}" class="w-full sm:w-auto bg-bark-900 text-white px-8 py-4 rounded-xl font-medium hover:bg-bark-800 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 flex items-center justify-center gap-2">
-            Launch Inspection
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-            </svg>
+<!--
+  Bryan'sTablea — Home
+  Minimalist. Pure white. Single font (Inter, inherited from base.html).
+  Bold headline + accent circle behind the disc, à la "less is more".
+-->
+<style>
+  .home{ 
+    --ink:#2D1A0E;           /* bark-900 */
+    --mid:#6B3A2A;           /* bark-700 */
+    --soft:#9b8574;          /* muted */
+    --line:#ECECEC;
+    --accent:#E8A849;        /* bark-400 amber */
+    --leaf:#388E3C;          /* leaf-600 */
+    --disc1:#6e4226; --disc2:#4a2916; --disc3:#341c10; --disc4:#25140b;
+    color:var(--ink);
+  }
+  .home *{box-sizing:border-box;}
+
+  /* ───────── HERO ───────── */
+  .hero{
+    display:grid; grid-template-columns:1fr 1fr; gap:3rem; align-items:center;
+    min-height:64vh; padding:2rem 0 3rem;
+  }
+  @media(max-width:880px){
+    .hero{grid-template-columns:1fr; gap:2rem; text-align:center; padding:1rem 0 2rem;}
+  }
+
+  .hero-tag{
+    font-size:.72rem; font-weight:600; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--soft); margin:0 0 1.5rem;
+    opacity:0; animation:rise .6s .05s forwards;
+  }
+  .hero h1{
+    font-weight:800; letter-spacing:-.035em; line-height:.96;
+    font-size:clamp(3rem,7.5vw,5.6rem); color:var(--ink); margin:0 0 1.6rem;
+    opacity:0; animation:rise .7s .12s forwards;
+  }
+  .hero h1 .accent{color:var(--mid);}
+  .hero p{
+    font-size:1.05rem; line-height:1.7; color:var(--mid); font-weight:400;
+    max-width:30rem; margin:0 0 2.2rem;
+    opacity:0; animation:rise .7s .24s forwards;
+  }
+  @media(max-width:880px){.hero p{margin-left:auto; margin-right:auto;}}
+
+  .cta{display:flex; gap:.8rem; flex-wrap:wrap; opacity:0; animation:rise .7s .34s forwards;}
+  @media(max-width:880px){.cta{justify-content:center;}}
+  .btn{
+    display:inline-flex; align-items:center; gap:.5rem;
+    padding:.9rem 1.55rem; border-radius:999px; font-weight:600; font-size:.95rem;
+    text-decoration:none; transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, background .25s, border-color .25s;
+  }
+  .btn-primary{background:var(--ink); color:#fff; box-shadow:0 10px 22px -12px rgba(45,26,14,.5);}
+  .btn-primary:hover{transform:translateY(-3px); box-shadow:0 18px 30px -14px rgba(45,26,14,.55); background:#3d2415;}
+  .btn-primary svg{transition:transform .25s;} .btn-primary:hover svg{transform:translateX(4px);}
+  .btn-ghost{background:#fff; color:var(--ink); border:1.5px solid var(--line);}
+  .btn-ghost:hover{transform:translateY(-3px); border-color:var(--soft);}
+
+  /* hero visual : amber circle + chocolate disc */
+  .stage{position:relative; display:flex; align-items:center; justify-content:center; min-height:380px; opacity:0; animation:fade 1s .3s forwards;}
+  .circle{
+    position:absolute; width:min(360px,80vw); aspect-ratio:1; border-radius:50%;
+    background:var(--accent); 
+    transform:translate(6%,-4%);
+  }
+  .disc{
+    position:relative; width:min(300px,66vw); aspect-ratio:1; border-radius:50%;
+    background:radial-gradient(circle at 38% 32%, var(--disc1) 0%, var(--disc2) 45%, var(--disc3) 72%, var(--disc4) 100%);
+    box-shadow:inset 0 6px 18px rgba(255,210,160,.16), inset 0 -16px 36px rgba(0,0,0,.5), 0 24px 44px -22px rgba(45,26,14,.5);
+    display:flex; align-items:center; justify-content:center;
+    animation:float 7s ease-in-out infinite;
+  }
+  .disc::before{content:""; position:absolute; inset:0; border-radius:50%;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3C/svg%3E");
+    opacity:.15; mix-blend-mode:overlay;}
+  .disc::after{content:""; position:absolute; inset:20%; border-radius:50%;
+    background:repeating-linear-gradient(0deg,transparent 0 28px,rgba(0,0,0,.18) 28px 29px),repeating-linear-gradient(90deg,transparent 0 28px,rgba(0,0,0,.18) 28px 29px);
+    -webkit-mask:radial-gradient(circle,#000 60%,transparent 72%); mask:radial-gradient(circle,#000 60%,transparent 72%); opacity:.45;}
+  .disc .emboss{position:relative; z-index:2; font-weight:700; font-style:italic; font-size:1.3rem; color:rgba(247,240,228,.22); letter-spacing:.02em;}
+
+  .badge{
+    position:absolute; z-index:3; background:#fff; border:1px solid var(--line);
+    border-radius:13px; padding:.55rem .8rem; box-shadow:0 14px 30px -16px rgba(45,26,14,.35);
+    display:flex; align-items:center; gap:.5rem; font-size:.8rem; font-weight:600; color:var(--mid);
+    animation:float 6s ease-in-out infinite;
+  }
+  .badge .pip{width:8px; height:8px; border-radius:50%;}
+  .badge.good{top:12%; left:-2%; animation-delay:.4s;} .badge.good .pip{background:var(--leaf);}
+  .badge.bloom{bottom:14%; right:-4%; animation-delay:1.1s;} .badge.bloom .pip{background:#d8943f;}
+  .badge small{display:block; font-weight:500; color:var(--soft); font-size:.68rem;}
+  @media(max-width:480px){.badge.good{left:2%;} .badge.bloom{right:2%;}}
+
+  /* ───────── FEATURES (numbered, minimal) ───────── */
+  .features{padding:4rem 0 2rem; border-top:1px solid var(--line);}
+  .feat-head{font-size:.72rem; font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--soft); margin:0 0 2.5rem;}
+  .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:2.5rem;}
+  @media(max-width:880px){.grid3{grid-template-columns:1fr; gap:2rem;}}
+  .feat .no{font-size:.8rem; font-weight:700; color:var(--accent); letter-spacing:.1em; margin-bottom:.9rem;}
+  .feat h3{font-size:1.25rem; font-weight:700; letter-spacing:-.01em; color:var(--ink); margin:0 0 .6rem;}
+  .feat p{font-size:.93rem; line-height:1.65; color:var(--mid); margin:0;}
+
+  @keyframes rise{from{opacity:0; transform:translateY(16px);} to{opacity:1; transform:translateY(0);}}
+  @keyframes fade{from{opacity:0;} to{opacity:1;}}
+  @keyframes float{0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);}}
+  @media(prefers-reduced-motion:reduce){.home *{animation:none!important;}}
+</style>
+
+<div class="home">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div>
+      <p class="hero-tag">Artisanal Cacao · Lipa, Batangas</p>
+      <h1>Precision<br>quality,<br><span class="accent">redefined.</span></h1>
+      <p>Every disc inspected by computer vision, every batch planned by demand forecasting — factory-grade quality control for traditional tablea.</p>
+      <div class="cta">
+        <a href="{{ url_for('detect') }}" class="btn btn-primary">
+          Launch Inspection
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+          </svg>
         </a>
-        
-        <a href="{{ url_for('analytics') }}" class="w-full sm:w-auto bg-white text-bark-900 border border-bark-200 px-8 py-4 rounded-xl font-medium hover:bg-bark-50 transition-all flex items-center justify-center gap-2 shadow-sm">
-            View Forecast Data
-        </a>
+        <a href="{{ url_for('analytics') }}" class="btn btn-ghost">View Forecast Data</a>
+      </div>
     </div>
-</section>
 
-<section class="max-w-6xl mx-auto mb-20">
-    <div class="grid md:grid-cols-3 gap-6">
-        <div class="bg-white p-8 rounded-2xl border border-bark-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-            <div class="absolute top-0 left-0 w-full h-1 bg-leaf-500 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300"></div>
-            <div class="w-12 h-12 bg-leaf-50 text-leaf-600 rounded-xl flex items-center justify-center mb-6">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-            </div>
-            <h3 class="text-xl font-bold text-bark-900 mb-3">Real-time YOLO Detection</h3>
-            <p class="text-bark-600 text-sm leading-relaxed">
-                Automated visual inspection identifying fat bloom, cracks, and surface defects with high-confidence bounding boxes.
-            </p>
-        </div>
-
-        <div class="bg-white p-8 rounded-2xl border border-bark-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-            <div class="absolute top-0 left-0 w-full h-1 bg-bark-500 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300"></div>
-            <div class="w-12 h-12 bg-bark-50 text-bark-600 rounded-xl flex items-center justify-center mb-6">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                </svg>
-            </div>
-            <h3 class="text-xl font-bold text-bark-900 mb-3">TFT Demand Forecasting</h3>
-            <p class="text-bark-600 text-sm leading-relaxed">
-                Multi-horizon time series forecasting capturing complex seasonal patterns and promotional events for accurate inventory planning.
-            </p>
-        </div>
-
-        <div class="bg-white p-8 rounded-2xl border border-bark-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-            <div class="absolute top-0 left-0 w-full h-1 bg-gray-800 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300"></div>
-            <div class="w-12 h-12 bg-gray-50 text-gray-700 rounded-xl flex items-center justify-center mb-6">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-            </div>
-            <h3 class="text-xl font-bold text-bark-900 mb-3">Actionable Dashboards</h3>
-            <p class="text-bark-600 text-sm leading-relaxed">
-                Integrated metrics combining defect rates and supply capabilities to provide immediate operational insights and warnings.
-            </p>
-        </div>
+    <div class="stage">
+      <div class="circle"></div>
+      <div class="disc"><span class="emboss">tablea</span></div>
+      <div class="badge good"><span class="pip"></span> Good <small>98% confidence</small></div>
+      <div class="badge bloom"><span class="pip"></span> Fat Bloom <small>detected</small></div>
     </div>
-</section>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features">
+    <p class="feat-head">What it does</p>
+    <div class="grid3">
+      <div class="feat">
+        <div class="no">01</div>
+        <h3>Two-Stage Vision</h3>
+        <p>A detector locates every tablet, then a classifier judges each one — cracked, fat bloom, or good — with confidence scores you can audit.</p>
+      </div>
+      <div class="feat">
+        <div class="no">02</div>
+        <h3>Demand Forecasting</h3>
+        <p>A Temporal Fusion Transformer reads your production history and seasonal events to project the next four weeks of demand.</p>
+      </div>
+      <div class="feat">
+        <div class="no">03</div>
+        <h3>Actionable Dashboards</h3>
+        <p>Yield, defect rates, cacao usage, and batch recommendations in one place — raw logs turned into decisions.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
 {% endblock %}
