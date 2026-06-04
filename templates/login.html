@@ -8,113 +8,180 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com/3.4.4"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            bark: { 50:'#FFF8E7',100:'#FEEBC8',200:'#FCD9A0',300:'#F6C56E',400:'#E8A849',500:'#A0522D',600:'#8B4513',700:'#6B3A2A',800:'#4A2818',900:'#2D1A0E' },
-            leaf: { 50:'#F0F9F0',100:'#DCF0DC',500:'#4CAF50',600:'#388E3C',900:'#1B431D' }
-          },
-          fontFamily: { sans: ['Inter', 'sans-serif'] }
-        }
-      }
-    }
-  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <style>
-    body { background: #ffffff; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f0f2f5;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 48px 40px 40px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      animation: rise 0.4s cubic-bezier(.2,.8,.2,1) forwards;
+    }
+
     @keyframes rise {
-      from { opacity: 0; transform: translateY(16px); }
+      from { opacity: 0; transform: translateY(12px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .card-enter { animation: rise 0.45s cubic-bezier(.2,.8,.2,1) forwards; }
 
-    input:focus { box-shadow: 0 0 0 3px rgba(76,175,80,0.15); }
+    .card h1 {
+      text-align: center;
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #2D1A0E;
+      margin-bottom: 6px;
+    }
+
+    .card .subtitle {
+      text-align: center;
+      font-size: 0.82rem;
+      color: #9b8574;
+      margin-bottom: 28px;
+    }
+
+    .error-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff5f5;
+      border: 1px solid #fecaca;
+      color: #dc2626;
+      font-size: 0.82rem;
+      font-weight: 500;
+      padding: 10px 14px;
+      border-radius: 10px;
+      margin-bottom: 18px;
+    }
+
+    .field {
+      display: flex;
+      align-items: center;
+      border: 1.5px solid #e8e0d8;
+      border-radius: 10px;
+      background: #fafaf9;
+      margin-bottom: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      overflow: hidden;
+    }
+
+    .field:focus-within {
+      border-color: #388E3C;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(56,142,60,0.1);
+    }
+
+    .field .field-icon {
+      padding: 0 4px 0 14px;
+      color: #b0a090;
+      font-size: 0.82rem;
+      flex-shrink: 0;
+    }
+
+    .field input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 13px 10px;
+      font-size: 0.88rem;
+      font-family: 'Inter', sans-serif;
+      color: #2D1A0E;
+      outline: none;
+      min-width: 0;
+    }
+
+    .field input::placeholder { color: #b0a090; }
+
+    .toggle-pw {
+      padding: 0 13px;
+      background: none;
+      border: none;
+      color: #b0a090;
+      cursor: pointer;
+      font-size: 0.82rem;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .toggle-pw:hover { color: #6B3A2A; }
+
+    .btn-login {
+      width: 100%;
+      padding: 13px;
+      background: #2D1A0E;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.92rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+
+    .btn-login:hover {
+      background: #4A2818;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(45,26,14,0.25);
+    }
+
+    .btn-login:active {
+      transform: translateY(0);
+    }
+
   </style>
 </head>
 
-<body class="font-['Inter'] min-h-screen flex flex-col items-center justify-center bg-white px-4">
+<body>
+  <div class="card">
 
-  <div class="card-enter w-full max-w-sm">
+    <h1>Login</h1>
+    <p class="subtitle">Enter your credentials to access the dashboard</p>
 
-    <!-- Branding -->
-    <div class="flex flex-col items-center mb-8">
-      <div class="w-14 h-14 bg-leaf-50 rounded-2xl flex items-center justify-center shadow-sm border border-leaf-100 mb-4">
-        <svg width="28" height="28" fill="none" stroke="#388E3C" viewBox="0 0 24 24"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
-          <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
-        </svg>
-      </div>
-      <h1 class="text-2xl font-bold tracking-tight text-bark-900">Bryan's Tablea</h1>
-      <p class="text-sm text-bark-500 mt-1">Sign in to access the dashboard</p>
+    {% if error %}
+    <div class="error-box">
+      <i class="fas fa-circle-exclamation"></i>
+      {{ error }}
     </div>
+    {% endif %}
 
-    <!-- Card -->
-    <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-8">
+    <form method="POST">
+      <input type="hidden" name="next" value="{{ next }}">
 
-      {% if error %}
-      <div class="mb-5 flex items-center gap-2.5 bg-red-50 border border-red-100 text-red-600 text-sm font-medium px-4 py-3 rounded-xl">
-        <i class="fas fa-circle-exclamation flex-shrink-0 text-xs"></i>
-        {{ error }}
+      <div class="field">
+        <span class="field-icon"><i class="fas fa-user"></i></span>
+        <input
+          id="username" name="username" type="text"
+          placeholder="Enter your username"
+          required autofocus
+        />
       </div>
-      {% endif %}
 
-      <form method="POST">
-        <input type="hidden" name="next" value="{{ next }}">
-
-        <!-- Username -->
-        <div class="mb-4">
-          <label class="block text-xs font-semibold text-bark-700 uppercase tracking-wider mb-1.5" for="username">
-            Username
-          </label>
-          <input
-            id="username" name="username" type="text"
-            placeholder="Enter username"
-            required autofocus
-            class="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-bark-900 placeholder-bark-300 focus:outline-none focus:border-leaf-500 transition"
-          />
-        </div>
-
-        <!-- Password -->
-        <div class="mb-6">
-          <label class="block text-xs font-semibold text-bark-700 uppercase tracking-wider mb-1.5" for="password">
-            Password
-          </label>
-          <div class="relative">
-            <input
-              id="password" name="password" type="password"
-              placeholder="Enter password"
-              required
-              class="w-full px-4 py-3 pr-11 rounded-xl border border-gray-200 text-sm text-bark-900 placeholder-bark-300 focus:outline-none focus:border-leaf-500 transition"
-            />
-            <button
-              type="button"
-              onclick="togglePassword()"
-              tabindex="-1"
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-bark-400 hover:text-bark-600 transition"
-            >
-              <i id="eye-icon" class="fas fa-eye text-sm"></i>
-            </button>
-          </div>
-        </div>
-
-        <!-- Submit -->
-        <button
-          type="submit"
-          class="w-full bg-bark-900 hover:bg-bark-800 active:bg-bark-900 text-white font-semibold text-sm py-3 rounded-xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-bark-900/20 flex items-center justify-center gap-2"
-        >
-          <i class="fas fa-arrow-right-to-bracket text-xs"></i>
-          Sign In
+      <div class="field">
+        <span class="field-icon"><i class="fas fa-lock"></i></span>
+        <input
+          id="password" name="password" type="password"
+          placeholder="Enter your password"
+          required
+        />
+        <button type="button" class="toggle-pw" onclick="togglePassword()" tabindex="-1">
+          <i id="eye-icon" class="fas fa-eye"></i>
         </button>
-      </form>
-    </div>
+      </div>
 
-    <p class="text-center text-xs text-bark-400 mt-6">
-      © 2026 Bryan's Tablea &nbsp;·&nbsp; Artisanal Quality Control
-    </p>
+      <button type="submit" class="btn-login">Login</button>
+    </form>
 
   </div>
 
@@ -131,6 +198,5 @@
       }
     }
   </script>
-
 </body>
 </html>
