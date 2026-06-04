@@ -1,184 +1,243 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="mb-8 animate-fade-in">
-    <h1 class="text-3xl font-bold text-bark-900">Production & Sales Logs</h1>
-    <p class="text-bark-500 mt-2">Record daily scans from the factory floor, and input finalized sales weekly.</p>
-</div>
+<!--
+  Bryan'sTablea — Logs (reorganized)
+  Layout: compact entry row on top (Daily | Weekly), full-width
+  tables below. Minimalist white + Inter to match the rest of the app.
+-->
+<style>
+  .logs{
+    --ink:#2D1A0E; --mid:#6B3A2A; --soft:#9b8574;
+    --line:#ECECEC; --line-2:#F4F2EF;
+    --leaf:#388E3C; --leaf-dk:#2f7733; --amber:#E8A849; --red:#C0492F;
+    color:var(--ink);
+  }
+  .logs *{box-sizing:border-box;}
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    
-    <div class="lg:col-span-1 space-y-6">
-        
-        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in">
-            <div class="bg-bark-900 px-6 py-4">
-                <h2 class="text-lg font-bold text-white"><i class="fas fa-industry mr-2"></i>1. Daily Production</h2>
-            </div>
-            <div class="p-6">
-                <form action="/api/add_log" method="POST" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-semibold text-bark-900 mb-1">Date</label>
-                        <input type="date" id="log-date" name="date" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-leaf-500 focus:border-leaf-500 outline-none" required>
-                    </div>
+  .logs-head{margin:0 0 2rem;}
+  .logs-head h1{font-size:clamp(1.9rem,4vw,2.6rem); font-weight:800; letter-spacing:-.03em; margin:0;}
+  .logs-head p{color:var(--soft); margin:.6rem 0 0; font-size:.98rem;}
 
-                    <div class="p-4 bg-leaf-50 border border-leaf-100 rounded-xl space-y-3">
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="font-semibold text-bark-700">Today's Scanned:</span>
-                            <span class="font-bold text-bark-900">{{ today_produced }} pcs</span>
-                        </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="font-semibold text-leaf-600">Good Quality:</span>
-                            <span class="font-bold text-leaf-700">{{ today_good }} pcs</span>
-                        </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="font-semibold text-red-500">Total Defects:</span>
-                            <span class="font-bold text-red-600">{{ today_defects }} pcs</span>
-                        </div>
-                        <div class="text-xs text-bark-500 border-t border-leaf-200 pt-2 mt-2">
-                            (Cracks: {{ today_crack }} | Bloom: {{ today_bloom }})
-                        </div>
-                    </div>
+  /* ── ENTRY ROW : two compact forms side by side ── */
+  .entry{display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; margin-bottom:2.25rem; align-items:stretch;}
+  @media(max-width:820px){.entry{grid-template-columns:1fr;}}
 
-                    <input type="hidden" name="total_produced" value="{{ today_produced }}">
-                    <input type="hidden" name="total_defects" value="{{ today_defects }}">
-                    <input type="hidden" name="cracked_count" value="{{ today_crack }}">
-                    <input type="hidden" name="bloom_count" value="{{ today_bloom }}">
-                    <input type="hidden" name="good_count" value="{{ today_good }}">
+  /* flex column so the submit button can pin to the bottom → buttons align */
+  .panel{
+    border:1px solid var(--line); border-radius:16px; background:#fff; padding:1.35rem 1.4rem;
+    display:flex; flex-direction:column;
+  }
+  .panel form{display:flex; flex-direction:column; flex:1;}
+  .panel .step{font-size:.68rem; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--amber);}
+  .panel h2{font-size:1.08rem; font-weight:700; letter-spacing:-.01em; margin:.3rem 0 1.1rem; color:var(--ink);}
 
-                    <button type="submit" class="w-full bg-leaf-500 hover:bg-leaf-600 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition">
-                        Confirm & Lock Daily Record
-                    </button>
-                </form>
-            </div>
+  /* compact form: fields sit in a responsive row */
+  .form-row{display:flex; gap:.8rem; align-items:flex-end; flex-wrap:wrap;}
+  .form-row .field{flex:1 1 130px; min-width:0;}
+  label.fld{display:block; font-size:.78rem; font-weight:600; color:var(--mid); margin:0 0 .35rem;}
+  .input{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:.62rem .75rem;
+    font-family:inherit; font-size:.92rem; color:var(--ink); background:#fff; outline:none;
+    transition:border-color .2s, box-shadow .2s;
+  }
+  .input:focus{border-color:var(--leaf); box-shadow:0 0 0 3px rgba(56,142,60,.12);}
+  .input::placeholder{color:#c3b6a8;}
+  .hint{font-size:.74rem; color:var(--soft); margin:.35rem 0 0;}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+    padding:.62rem 1.1rem; border-radius:10px; font-family:inherit; font-weight:600; font-size:.9rem;
+    cursor:pointer; border:1px solid transparent; white-space:nowrap;
+    transition:transform .2s, background .2s, box-shadow .2s;
+  }
+  .btn-ink{background:var(--ink); color:#fff;}
+  .btn-ink:hover{transform:translateY(-2px); background:#3d2415; box-shadow:0 12px 22px -12px rgba(45,26,14,.5);}
+  .btn-leaf{background:var(--leaf); color:#fff;}
+  .btn-leaf:hover{transform:translateY(-2px); background:var(--leaf-dk); box-shadow:0 12px 22px -12px rgba(56,142,60,.5);}
+  /* full-width submit pinned to bottom of the flex form so both
+     buttons align across the two panels regardless of form height.
+     The 1.25rem padding-top guarantees a gap even when margin-top:auto
+     collapses to zero (when a form is already the tall one). */
+  .btn.full{width:100%; margin-top:auto; padding-top:.72rem; padding-bottom:.72rem;}
+  .panel form > *:nth-last-child(2){margin-bottom:1.25rem;}
+
+  /* today's mini-summary as inline pills (compact) */
+  .pills{display:flex; gap:.5rem; flex-wrap:wrap; margin:1rem 0 0;}
+  .pill{
+    border:1px solid var(--line); border-radius:10px; padding:.5rem .7rem; flex:1 1 auto; min-width:90px;
+  }
+  .pill .k{font-size:.68rem; letter-spacing:.04em; text-transform:uppercase; color:var(--soft);}
+  .pill .v{font-size:1.05rem; font-weight:700; margin-top:.15rem;}
+  .pill.good .v{color:var(--leaf);}
+  .pill.bad  .v{color:var(--red);}
+  .pill .sub{font-size:.68rem; color:var(--soft); margin-top:.1rem;}
+
+  /* ── TABLES : full width ── */
+  .table-card{border:1px solid var(--line); border-radius:16px; background:#fff; overflow:hidden;}
+  .table-card + .table-card{margin-top:1.5rem;}
+  .table-top{display:flex; justify-content:space-between; align-items:center; padding:1.15rem 1.5rem; border-bottom:1px solid var(--line);}
+  .table-top h2{font-size:1.05rem; font-weight:700; letter-spacing:-.01em; margin:0;}
+  .chip{font-size:.7rem; font-weight:600; letter-spacing:.06em; color:var(--soft); border:1px solid var(--line); border-radius:999px; padding:.3rem .8rem;}
+  .scroll{overflow-x:auto;}
+  table{width:100%; border-collapse:collapse;}
+  thead th{
+    text-align:left; font-size:.68rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--soft); padding:.85rem 1.5rem; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  tbody td{padding:.9rem 1.5rem; font-size:.9rem; border-bottom:1px solid var(--line-2); white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr{transition:background .15s;}
+  tbody tr:hover{background:#fcfbf9;}
+  .t-date{font-weight:600; color:var(--ink);}
+  .t-week{color:var(--amber); font-weight:500;}
+  .t-strong{font-weight:700; color:var(--ink);}
+  .t-good{font-weight:700; color:var(--leaf);}
+  .t-bad{color:var(--red); font-weight:500;}
+  .t-sales{font-weight:700; color:#b07a1f;}
+  .t-muted{color:var(--soft); font-style:italic; font-weight:400;}
+  .t-empty{text-align:center; color:var(--soft); padding:2.5rem 1rem; font-size:.9rem;}
+  .wk-main{font-weight:600; color:var(--ink);} .wk-sub{display:block; font-size:.72rem; color:var(--soft); margin-top:.1rem;}
+
+  @media(prefers-reduced-motion:reduce){.logs *{transition:none!important;}}
+</style>
+
+<div class="logs">
+
+  <div class="logs-head">
+    <h1>Production &amp; Sales Logs</h1>
+    <p>Record daily scans from the factory floor, and input finalized sales weekly.</p>
+  </div>
+
+  <!-- ENTRY ROW -->
+  <div class="entry">
+
+    <!-- Daily -->
+    <div class="panel">
+      <div class="step">Step 01</div>
+      <h2>Daily Production</h2>
+      <form action="/api/add_log" method="POST">
+        <div class="form-row">
+          <div class="field">
+            <label class="fld">Date</label>
+            <input type="date" id="log-date" name="date" class="input" required>
+          </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in delay-100">
-            <div class="bg-bark-900 px-6 py-4">
-                <h2 class="text-lg font-bold text-white"><i class="fas fa-store mr-2"></i>2. Weekly Sales & Events</h2>
-            </div>
-            <div class="p-6">
-                <form action="/api/add_sales" method="POST" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-semibold text-bark-900 mb-1">Week Ending Date</label>
-                        <input type="date" id="sales-date" name="sales_date" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-yellow-500 focus:border-yellow-500 outline-none" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-bark-900 mb-1">Actual Sales (pcs)</label>
-                        <input type="number" name="weekly_sales" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-yellow-500 focus:border-yellow-500 outline-none font-bold text-lg" placeholder="e.g. 8200" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-bark-900 mb-1">Event Name <span class="text-bark-500 font-normal">(Optional)</span></label>
-                        <input type="text" name="event_name" class="w-full rounded-lg border-bark-200 shadow-sm px-3 py-2 border focus:ring-yellow-500 focus:border-yellow-500 outline-none" placeholder="e.g. Christmas, Valentine, Wedding">
-                        <p class="text-xs text-bark-500 mt-1">Leave blank for normal/regular weeks.</p>
-                    </div>
-                    <button type="submit" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition">
-                        Log Weekly Update
-                    </button>
-                </form>
-            </div>
+        <div class="pills">
+          <div class="pill"><div class="k">Scanned</div><div class="v">{{ today_produced }}</div></div>
+          <div class="pill good"><div class="k">Good</div><div class="v">{{ today_good }}</div></div>
+          <div class="pill bad"><div class="k">Defects</div><div class="v">{{ today_defects }}</div>
+            <div class="sub">Cr {{ today_crack }} · Bl {{ today_bloom }}</div></div>
         </div>
+
+        <input type="hidden" name="total_produced" value="{{ today_produced }}">
+        <input type="hidden" name="total_defects" value="{{ today_defects }}">
+        <input type="hidden" name="cracked_count" value="{{ today_crack }}">
+        <input type="hidden" name="bloom_count" value="{{ today_bloom }}">
+        <input type="hidden" name="good_count" value="{{ today_good }}">
+
+        <button type="submit" class="btn btn-ink full">Confirm &amp; Lock Daily Record</button>
+      </form>
     </div>
 
-    <div class="lg:col-span-2 space-y-6">
-        
-        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in delay-100">
-            <div class="bg-white border-b border-bark-200 px-6 py-4">
-                <h2 class="text-lg font-bold text-bark-900">Recent Daily Logs</h2>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-bark-50 text-bark-500 uppercase text-xs tracking-wider">
-                            <th class="px-6 py-3 font-bold">Date</th>
-                            <th class="px-6 py-3 font-bold">Week ID</th>
-                            <th class="px-6 py-3 font-bold">Produced</th>
-                            <th class="px-6 py-3 font-bold">Good Quality</th>
-                            <th class="px-6 py-3 font-bold">Defects</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-bark-100">
-                        {% for log in logs %}
-                        <tr class="hover:bg-bark-50/50 transition-colors">
-                            <td class="px-6 py-3 text-sm font-medium text-bark-900">{{ log.date.strftime('%Y-%m-%d') }}</td>
-                            <td class="px-6 py-3 text-sm text-bark-500">{{ log.week_id }}</td>
-                            <td class="px-6 py-3 text-sm font-bold text-bark-900">{{ log.total_produced }}</td>
-                            <td class="px-6 py-3 text-sm font-bold text-leaf-600">{{ log.good_count }}</td>
-                            <td class="px-6 py-3 text-sm text-red-500">{{ log.total_defects }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="5" class="px-6 py-8 text-center text-bark-400 text-sm">
-                                No daily logs locked yet.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    <!-- Weekly -->
+    <div class="panel">
+      <div class="step">Step 02</div>
+      <h2>Weekly Sales &amp; Events</h2>
+      <form action="/api/add_sales" method="POST">
+        <div class="form-row">
+          <div class="field">
+            <label class="fld">Week Ending</label>
+            <input type="date" id="sales-date" name="sales_date" class="input" required>
+          </div>
+          <div class="field">
+            <label class="fld">Sales (pcs)</label>
+            <input type="number" name="weekly_sales" class="input" placeholder="8200" required>
+          </div>
         </div>
-
-        <div class="bg-white rounded-2xl shadow-sm border border-bark-200 overflow-hidden animate-fade-in delay-200">
-            <div class="bg-bark-900 px-6 py-4 flex justify-between items-center">
-                <h2 class="text-lg font-bold text-white"><i class="fas fa-table mr-2"></i>Weekly Master Record</h2>
-                <span class="bg-bark-700 text-white text-xs font-medium px-3 py-1 rounded-full">Historical Archive</span>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-bark-50 text-bark-500 uppercase text-xs tracking-wider border-b border-bark-200">
-                            <th class="px-6 py-3 font-bold">Global Wk</th>
-                            <th class="px-6 py-3 font-bold">Month</th>
-                            <th class="px-6 py-3 font-bold">Event Name</th>
-                            <th class="px-6 py-3 font-bold">Produced</th>
-                            <th class="px-6 py-3 font-bold">Net Usable</th>
-                            <th class="px-6 py-3 font-bold">Defect Rate</th>
-                            <th class="px-6 py-3 font-bold">Sales (pcs)</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-bark-100">
-                        {% for week in weekly_logs %}
-                        <tr class="hover:bg-bark-50/50 transition-colors">
-                            <td class="px-6 py-3 text-sm text-bark-900 font-medium">
-                                Wk {{ week.time_idx }} 
-                                <span class="text-xs text-bark-400 block">{{ week.week_id }}</span>
-                            </td>
-                            <td class="px-6 py-3 text-sm text-bark-600">{{ week.month }}</td>
-                            <td class="px-6 py-3 text-sm text-bark-600">
-                                {% if week.event_name and week.event_name != 'None' %}
-                                    {{ week.event_name }}
-                                {% else %}
-                                    <span class="text-bark-400 italic">Regular</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-6 py-3 text-sm text-bark-900 font-medium">{{ "{:,.0f}".format(week.total_produced) }}</td>
-                            <td class="px-6 py-3 text-sm font-bold text-leaf-600">{{ "{:,.0f}".format(week.net_usable_output) }}</td>
-                            <td class="px-6 py-3 text-sm text-red-500 font-medium">{{ "%.2f" | format(week.defect_rate * 100) }}%</td>
-                            <td class="px-6 py-3 text-sm font-bold text-yellow-600 bg-yellow-50/30">
-                                {% if week.sales_pcs > 0 %}
-                                    {{ "{:,.0f}".format(week.sales_pcs) }}
-                                {% else %}
-                                    <span class="text-bark-400 font-normal italic">Pending...</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-bark-400 text-sm">
-                                No weekly records generated yet.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        <div class="field" style="margin-top:.8rem;">
+          <label class="fld">Event <span style="color:var(--soft);font-weight:400;">(optional)</span></label>
+          <input type="text" name="event_name" class="input" placeholder="Christmas, Valentine, Wedding…">
+          <p class="hint">Leave blank for regular weeks.</p>
         </div>
-
+        <button type="submit" class="btn btn-leaf full">Log Weekly Update</button>
+      </form>
     </div>
+
+  </div>
+
+  <!-- FULL-WIDTH TABLES -->
+
+  <div class="table-card">
+    <div class="table-top"><h2>Recent Daily Logs</h2></div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Week ID</th><th>Produced</th><th>Good Quality</th><th>Defects</th></tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td class="t-date">{{ log.date.strftime('%Y-%m-%d') }}</td>
+            <td class="t-week">{{ log.week_id }}</td>
+            <td class="t-strong">{{ log.total_produced }}</td>
+            <td class="t-good">{{ log.good_count }}</td>
+            <td class="t-bad">{{ log.total_defects }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="t-empty">No daily logs locked yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-top">
+      <h2>Weekly Master Record</h2>
+      <span class="chip">Historical Archive</span>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Global Wk</th><th>Month</th><th>Event</th><th>Produced</th><th>Net Usable</th><th>Defect Rate</th><th>Sales</th></tr>
+        </thead>
+        <tbody>
+          {% for week in weekly_logs %}
+          <tr>
+            <td><span class="wk-main">Wk {{ week.time_idx }}</span><span class="wk-sub">{{ week.week_id }}</span></td>
+            <td style="color:var(--mid);">{{ week.month }}</td>
+            <td>
+              {% if week.event_name and week.event_name != 'None' %}
+                <span style="color:var(--mid);">{{ week.event_name }}</span>
+              {% else %}
+                <span class="t-muted">Regular</span>
+              {% endif %}
+            </td>
+            <td class="t-strong">{{ "{:,.0f}".format(week.total_produced) }}</td>
+            <td class="t-good">{{ "{:,.0f}".format(week.net_usable_output) }}</td>
+            <td class="t-bad">{{ "%.2f" | format(week.defect_rate * 100) }}%</td>
+            <td>
+              {% if week.sales_pcs > 0 %}
+                <span class="t-sales">{{ "{:,.0f}".format(week.sales_pcs) }}</span>
+              {% else %}
+                <span class="t-muted">Pending…</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="t-empty">No weekly records generated yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
 <script>
-    // Set date pickers to today's date for convenience
-    document.getElementById('log-date').valueAsDate = new Date();
-    document.getElementById('sales-date').valueAsDate = new Date();
+  document.getElementById('log-date').valueAsDate = new Date();
+  document.getElementById('sales-date').valueAsDate = new Date();
 </script>
 {% endblock %}
