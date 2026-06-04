@@ -1,11 +1,18 @@
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import cv2
 import base64
 import numpy as np
 import pandas as pd
 from datetime import datetime, date
-from flask import Flask, render_template, jsonify, request, redirect, url_for
+from functools import wraps
+from flask import Flask, render_template, jsonify, request, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # --- IMPORT YOLO ---
 try:
@@ -36,6 +43,19 @@ except ImportError:
 # 1. INITIALIZE FLASK APP & DATABASE
 # ============================================================
 app = Flask(__name__, static_folder='static', template_folder='templates')
+app.secret_key = os.environ.get('SECRET_KEY')
+if not app.secret_key:
+    raise RuntimeError("Missing required environment variable: SECRET_KEY\nSet it in a .env file locally or in Railway for production.")
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('logged_in'):
+            if request.path.startswith('/api/') or request.path.startswith('/upload'):
+                return jsonify({"error": "Unauthorized. Please log in."}), 401
+            return redirect(url_for('login', next=request.path))
+        return f(*args, **kwargs)
+    return decorated
 
 db_url = os.environ.get("DATABASE_URL", "sqlite:///tableascan.db")
 
@@ -107,12 +127,34 @@ class ProductionHistory(db.Model):
     net_usable_output = db.Column(db.Integer, nullable=False, default=0)
     defect_rate = db.Column(db.Float, nullable=False, default=0.0)
 
+class AdminUser(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+
 with app.app_context():
     try:
         db.create_all()
         print("✅ Database tables ready")
     except Exception as e:
         print(f"⚠️  db.create_all() warning: {e}")
+
+    # Seed admin on first run only — uses env vars once, then DB is the source of truth
+    try:
+        if not AdminUser.query.first():
+            seed_user = os.environ.get('ADMIN_USERNAME', '').strip()
+            seed_pass = os.environ.get('ADMIN_PASSWORD', '').strip()
+            if seed_user and seed_pass:
+                db.session.add(AdminUser(
+                    username=seed_user,
+                    password_hash=generate_password_hash(seed_pass)
+                ))
+                db.session.commit()
+                print(f"✅ Admin user '{seed_user}' created in database")
+            else:
+                print("⚠️  No admin user found. Set ADMIN_USERNAME + ADMIN_PASSWORD env vars on first run to create one.")
+    except Exception as e:
+        print(f"⚠️  Admin seed warning: {e}")
 
 # ============================================================
 # 2. INITIALIZE AI MODELS
@@ -228,6 +270,24 @@ if PYTORCH_AVAILABLE:
 # ============================================================
 # 3. HELPER FUNCTIONS
 # ============================================================
+import click
+
+@app.cli.command("reset-admin")
+@click.argument("username")
+@click.argument("password")
+def reset_admin(username, password):
+    """Reset or create the admin user. Usage: flask reset-admin <username> <password>"""
+    user = AdminUser.query.filter_by(username=username).first()
+    if user:
+        user.password_hash = generate_password_hash(password)
+        db.session.commit()
+        print(f"✅ Password updated for '{username}'")
+    else:
+        db.session.add(AdminUser(username=username, password_hash=generate_password_hash(password)))
+        db.session.commit()
+        print(f"✅ Admin user '{username}' created")
+
+
 def _dummy_forecast(reason):
     return jsonify({
         "labels": ["Next Wk 1", "Next Wk 2", "Next Wk 3", "Next Wk 4"],
@@ -251,7 +311,32 @@ def bucket_event(raw: str) -> str:
 # ============================================================
 # 4. PAGE ROUTES
 # ============================================================
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('logged_in'):
+        return redirect(url_for('home'))
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = AdminUser.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session['logged_in'] = True
+            next_page = request.form.get('next', '').strip()
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('detect')
+            return redirect(next_page)
+        error = "Invalid username or password."
+    next_page = request.args.get('next', '')
+    return render_template('login.html', error=error, next=next_page)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('home'))
+
 @app.route('/api/model_status')
+@login_required
 def model_status():
     """Returns whether the vision models are loaded and ready."""
     return jsonify({
@@ -267,14 +352,17 @@ def home():
     return render_template('home.html', current_page='home')
 
 @app.route('/detect')
+@login_required
 def detect():
     return render_template('detect.html', current_page='detect')
 
 @app.route('/analytics')
+@login_required
 def analytics():
     return render_template('analytics.html', current_page='analytics')
 
 @app.route('/logs')
+@login_required
 def logs():
     recent_logs = DailyProduction.query.order_by(DailyProduction.date.desc()).limit(30).all()
     weekly_logs = ProductionHistory.query.order_by(ProductionHistory.time_idx.desc()).limit(8).all()
@@ -306,6 +394,7 @@ def logs():
 # 5. DATA MANAGEMENT ROUTES
 # ============================================================
 @app.route('/api/add_log', methods=['POST'])
+@login_required
 def add_log():
     try:
         date_str = request.form.get('date')
@@ -361,6 +450,7 @@ def add_log():
         return jsonify({"error": str(e)}), 400
 
 @app.route('/api/add_sales', methods=['POST'])
+@login_required
 def add_sales():
     try:
         date_str = request.form.get('sales_date')
@@ -399,6 +489,7 @@ def add_sales():
 # 6. API ROUTES
 # ============================================================
 @app.route('/api/stats')
+@login_required
 def get_stats():
     try:
         recent_history = ProductionHistory.query.order_by(ProductionHistory.time_idx.desc()).limit(4).all()
@@ -430,39 +521,39 @@ def get_stats():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/forecast')
+@login_required
 def get_forecast():
     try:
         if tft_model is None or tft_dataset is None:
             return _dummy_forecast("TFT Model or Dataset not loaded")
- 
+
         history_records = (
-            db.session.query(ProductionHistory)
-            .order_by(ProductionHistory.time_idx.desc())
-            .limit(24)
-            .all()
-        )
- 
-        if len(history_records) < 24:
-            return _dummy_forecast(f"Only {len(history_records)} DB rows found. Need 24 for the new encoder length.")
- 
+                db.session.query(ProductionHistory)
+                .order_by(ProductionHistory.time_idx.desc())
+                .limit(60)
+                .all()
+            )
+        if len(history_records) < 30:
+            return _dummy_forecast(f"Only {len(history_records)} DB rows found. Need at least 30.")
+
         history_records.reverse()
         data = []
         historical_sales = []
         historical_defect_list = []          # ← NEW: collect defect rates
- 
+
         for r in history_records:
             historical_sales.append(r.sales_pcs)
-            historical_defect_list.append(round(r.defect_rate, 4))   # ← NEW
- 
+            historical_defect_list.append(round(r.defect_rate, 4))
+
             try:
                 year, w_str = r.week_id.split('-W')
                 year = int(year)
                 global_week = int(w_str)
             except:
                 year, global_week = 2024, 1
- 
+
             abs_week = ((year - 2022) * 48) + global_week
- 
+
             data.append({
                 "Absolute Week": abs_week,
                 "Product_Line": "Tablea_Overall",
@@ -472,12 +563,12 @@ def get_forecast():
                 "Month": str(r.month).strip() if r.month else "January",
                 "Week_in_Month": str((global_week % 4) + 1),
             })
- 
+
         df = pd.DataFrame(data)
         recent_avg_demand = df['Sales'].tail(4).mean()
         last_row = df.iloc[-1]
         last_abs_week = int(last_row['Absolute Week'])
- 
+
         future_data = []
         for i in range(1, 5):
             future_data.append({
@@ -489,29 +580,29 @@ def get_forecast():
                 "Month": last_row['Month'],
                 "Week_in_Month": str(((int(last_row['Week_in_Month']) + i - 1) % 4) + 1),
             })
- 
+
         df_future = pd.DataFrame(future_data)
         df_combined = pd.concat([df, df_future], ignore_index=True)
- 
+
         df_combined['Sales_Lag1']      = df_combined['Sales'].shift(1).bfill()
         df_combined['Sales_Lag4']      = df_combined['Sales'].shift(4).bfill()
         df_combined['Rolling_Mean_4']  = df_combined['Sales'].shift(1).rolling(4, min_periods=1).mean().bfill()
         df_combined['Rolling_Mean_12'] = df_combined['Sales'].shift(1).rolling(12, min_periods=1).mean().bfill()
- 
+
         predict_dataset = TimeSeriesDataSet.from_dataset(
             tft_dataset, df_combined, predict=True,
             stop_randomization=True,
             allow_missing_timesteps=True,        # ← NEW: fixes timestep gap error
         )
         dataloader = predict_dataset.to_dataloader(train=False, batch_size=1)
- 
+
         future_preds = tft_model.predict(dataloader, mode='quantiles')
         predicted_demand = [int(val) for val in future_preds[0, :, 3].flatten().tolist()]
- 
+
         historical_labels = [f"Week {int(idx)}" for idx in df_combined["Absolute Week"].iloc[:-4].tolist()]
         last_4_output = df["Sales"].tail(4).tolist()
         avg_supply = int(sum(last_4_output) / len(last_4_output)) if last_4_output else 48500
- 
+
         return jsonify({
             "labels": ["Next Wk 1", "Next Wk 2", "Next Wk 3", "Next Wk 4"],
             "expected_demand": predicted_demand,
@@ -521,7 +612,7 @@ def get_forecast():
             "historical_defects": historical_defect_list[-8:],   # ← NEW: real defect rates
             "status": "AI Prediction Success"
         })
- 
+
     except Exception as e:
         return _dummy_forecast(f"AI Execution Error: {str(e)}")
 
@@ -529,6 +620,7 @@ def get_forecast():
 # 7. SCANNER ROUTES
 # ============================================================
 @app.route('/upload_image', methods=['POST'])
+@login_required
 def upload_image():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
@@ -705,6 +797,7 @@ def upload_image():
                         "trace": traceback.format_exc()}), 500
 
 @app.route('/api/confirm_scan', methods=['POST'])
+@login_required
 def confirm_scan():
     try:
         data = request.json
@@ -727,4 +820,3 @@ def confirm_scan():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
