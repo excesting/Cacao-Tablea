@@ -29,6 +29,12 @@ try:
 except ImportError:
     print("⚠️ timm not found. Classifier will be disabled.")
 
+# --- IMPORT SHAPE-GATE LIB (pickled scikit-learn DecisionTree) ---
+try:
+    import joblib
+except ImportError:
+    print("⚠️ joblib not found. Shape-gate will be disabled.")
+
 # --- IMPORT PYTORCH FORECASTING ---
 try:
     from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
@@ -161,24 +167,33 @@ with app.app_context():
 # ============================================================
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-detector_model = None
+segmenter_model  = None
 classifier_model = None
+gate_model       = None
 clf_names = []
-clf_tf = None
-tft_model = None
-tft_dataset = None
 
 # --- LOAD VISION MODELS ---
 # Expected files in the same folder as app.py:
-#   best_detector.pt    → YOLO  (finds WHERE tablets are)
-#   best_classifier.pth → EfficientNet-B4 (classifies WHAT each tablet is)
+#   best_segmenter.pt   → YOLOv8-seg  (finds AND outlines every tablea)
+#   best_classifier.pth → EfficientNet (Good vs Fat Bloom + surface cracks)
+#   shape_gate.joblib   → DecisionTree (geometry → Cracked, lighting-proof)
 
-DETECTOR_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "best_detector.pt")
-CLASSIFIER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "best_classifier.pth")
+BASE = os.path.dirname(os.path.abspath(__file__))
+SEGMENTER_PATH  = os.path.join(BASE, "best_segmenter.pt")
+CLASSIFIER_PATH = os.path.join(BASE, "best_classifier.pth")
+GATE_PATH       = os.path.join(BASE, "shape_gate.joblib")
 
-# Confidence thresholds
-DET_CONF  = 0.40   # detection confidence  (lower = finds more tablets)
-CLF_CONF  = 0.50   # classification        (below = marked uncertain)
+# Thresholds
+DET_CONF, DET_IOU, MAX_DET = 0.50, 0.45, 60   # segmenter detection + NMS (kills duplicate boxes)
+CLF_CONF  = 0.50                              # classifier: below this → uncertain
+CROP_PAD  = 0.12                              # crop padding — matches training (was 0.05)
+
+# ── "is this actually a tray of tablea?" guard ──────────────────
+# A one-class segmenter has no concept of "not a tablea", so a face/hand/etc.
+# can still get boxes. A real batch is MANY tablea of UNIFORM size on a tray;
+# junk photos give a few scattered boxes of wildly different sizes.
+MIN_TABLEA  = 8     # reject if fewer tablea-like objects than this were found
+SIZE_CV_MAX = 0.85  # reject if box-size variation (std/mean) exceeds this
 
 # BGR colors for bounding boxes per class
 BOX_COLORS = {
@@ -188,52 +203,80 @@ BOX_COLORS = {
     "uncertain": (180, 180, 180),   # grey
 }
 
-try:
-    # 1. Load Detector (single class: tablet)
-    if not os.path.exists(DETECTOR_PATH):
-        raise FileNotFoundError(f"Detector not found: {DETECTOR_PATH}")
-    detector_model = YOLO(DETECTOR_PATH)
-    print(f"✅ Detector loaded  → {DETECTOR_PATH}")
+# ── geometry helpers (shape-gate) ───────────────────────────────
+def letterbox_square(im, size, pad=128):
+    """Pad-to-square (preserve aspect ratio) — matches training crop prep."""
+    h, w = im.shape[:2]; s = size / max(h, w)
+    nh, nw = max(1, int(round(h*s))), max(1, int(round(w*s)))
+    r = cv2.resize(im, (nw, nh))
+    canvas = np.full((size, size, 3), pad, np.uint8)
+    t, l = (size-nh)//2, (size-nw)//2
+    canvas[t:t+nh, l:l+nw] = r
+    return canvas
 
-    # 2. Load EfficientNet-B4 Classifier
+def smooth_poly(poly, eps_frac=0.01):
+    """approxPolyDP — removes mask-edge jitter that inflates perimeter."""
+    poly = np.asarray(poly, np.float32).reshape(-1, 1, 2)
+    if len(poly) < 3:
+        return poly
+    ap = cv2.approxPolyDP(poly, eps_frac * cv2.arcLength(poly, True), True)
+    return ap if len(ap) >= 3 else poly
+
+def shape_feats(poly):
+    """[circle_fill, solidity, circularity] — the gate's input features."""
+    poly = np.asarray(poly, np.float32).reshape(-1, 1, 2)
+    if len(poly) < 3:
+        return [0, 0, 0]
+    a = cv2.contourArea(poly); p = cv2.arcLength(poly, True)
+    h = cv2.contourArea(cv2.convexHull(poly)); (_, _), r = cv2.minEnclosingCircle(poly)
+    return [a/(np.pi*r*r) if r > 0 else 0,
+            a/h if h > 0 else 0,
+            4*np.pi*a/(p*p) if p > 0 else 0]
+
+try:
+    # 1. Load Segmenter (single class: tablet) — replaces the old detector
+    if not os.path.exists(SEGMENTER_PATH):
+        raise FileNotFoundError(f"Segmenter not found: {SEGMENTER_PATH}")
+    segmenter_model = YOLO(SEGMENTER_PATH)
+    print(f"✅ Segmenter loaded → {SEGMENTER_PATH}")
+
+    # 2. Load EfficientNet Classifier (reads model_name + input_size from checkpoint)
     if not os.path.exists(CLASSIFIER_PATH):
         raise FileNotFoundError(f"Classifier not found: {CLASSIFIER_PATH}")
-
-    # weights_only=False required for checkpoint dicts (model_state + metadata)
     ckpt = torch.load(CLASSIFIER_PATH, map_location=DEVICE, weights_only=False)
-    clf_names  = ckpt['class_names']          # ['Cracked', 'Fat Bloom', 'Good']
-    saved_acc  = ckpt.get('val_acc', 'N/A')
-
+    clf_names = ckpt['class_names']                    # ['Cracked', 'Fat Bloom', 'Good']
+    CLF_SIZE  = ckpt.get('input_size', 256)
     classifier_model = timm.create_model(
-        ckpt.get('model_name', 'efficientnet_b4'),   # default now B4
+        ckpt.get('model_name', 'efficientnet_b0'),
         pretrained=False,
-        num_classes=len(clf_names)
+        num_classes=len(clf_names),
     )
     classifier_model.load_state_dict(ckpt['model_state'])
     classifier_model.eval().to(DEVICE)
+    CLF_MEAN = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
+    CLF_STD  = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
+    print(f"✅ Classifier loaded → {ckpt.get('model_name', 'efficientnet_b0')} @ {CLF_SIZE}px | {clf_names}")
 
-    # Inference transform — matches training val_tf exactly (256px for B4)
-    clf_tf = transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.Resize((256, 256)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406],
-                             [0.229, 0.224, 0.225]),
-    ])
-    print(f"✅ Classifier loaded → {CLASSIFIER_PATH}")
-    print(f"   Model     : {ckpt.get('model_name', 'efficientnet_b4')}")
-    print(f"   Classes   : {clf_names}")
-    print(f"   Val acc   : {saved_acc:.3f}" if isinstance(saved_acc, float) else f"   Val acc   : {saved_acc}")
-    if 'cracked_f1' in ckpt:
-        print(f"   Crack F1  : {ckpt['cracked_f1']:.3f}")
-        print(f"   Bloom F1  : {ckpt['fat_bloom_f1']:.3f}")
-        print(f"   Good F1   : {ckpt['good_f1']:.3f}")
+    # 3. Load Shape-Gate (geometry → Cracked)
+    if not os.path.exists(GATE_PATH):
+        raise FileNotFoundError(f"Shape-gate not found: {GATE_PATH}")
+    gate_model = joblib.load(GATE_PATH)
+    print(f"✅ Shape-gate loaded → {GATE_PATH}")
     print(f"   Device    : {DEVICE}")
 
 except Exception as e:
     print(f"⚠️  Vision model loading failed: {e}")
-    print(f"   Make sure best_detector.pt and best_classifier.pth")
+    print(f"   Make sure best_segmenter.pt, best_classifier.pth and shape_gate.joblib")
     print(f"   are in the same folder as app.py")
+    segmenter_model = classifier_model = gate_model = None
+
+
+def clf_preprocess(bgr):
+    """Letterbox + ImageNet-normalise a BGR crop into a model-ready tensor."""
+    rgb = cv2.cvtColor(letterbox_square(bgr, CLF_SIZE), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.
+    t = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(DEVICE)
+    return (t - CLF_MEAN) / CLF_STD
+
 
 # --- LOAD FORECASTING MODEL ---
 if PYTORCH_AVAILABLE:
@@ -266,6 +309,11 @@ if PYTORCH_AVAILABLE:
     except Exception as e:
         print(f"⚠️ TFT Model Error: {e}")
         torch.load = original_load
+        tft_model = None
+        tft_dataset = None
+else:
+    tft_model = None
+    tft_dataset = None
 
 # ============================================================
 # 3. HELPER FUNCTIONS
@@ -340,11 +388,13 @@ def logout():
 def model_status():
     """Returns whether the vision models are loaded and ready."""
     return jsonify({
-        "detector":   detector_model is not None,
+        "detector":   segmenter_model is not None,   # segmenter does the detector's job
+        "segmenter":  segmenter_model is not None,
         "classifier": classifier_model is not None,
+        "shape_gate": gate_model is not None,
         "classes":    clf_names,
         "device":     str(DEVICE),
-        "ready":      detector_model is not None and classifier_model is not None,
+        "ready":      segmenter_model is not None and classifier_model is not None and gate_model is not None,
     })
 
 @app.route('/')
@@ -539,7 +589,7 @@ def get_forecast():
         history_records.reverse()
         data = []
         historical_sales = []
-        historical_defect_list = []          # ← NEW: collect defect rates
+        historical_defect_list = []          # ← collect defect rates
 
         for r in history_records:
             historical_sales.append(r.sales_pcs)
@@ -592,7 +642,7 @@ def get_forecast():
         predict_dataset = TimeSeriesDataSet.from_dataset(
             tft_dataset, df_combined, predict=True,
             stop_randomization=True,
-            allow_missing_timesteps=True,        # ← NEW: fixes timestep gap error
+            allow_missing_timesteps=True,        # ← fixes timestep gap error
         )
         dataloader = predict_dataset.to_dataloader(train=False, batch_size=1)
 
@@ -609,7 +659,7 @@ def get_forecast():
             "projected_supply": [avg_supply] * 4,
             "historical_last_4_weeks": historical_sales[-4:],
             "historical_time": historical_labels[-8:],
-            "historical_defects": historical_defect_list[-8:],   # ← NEW: real defect rates
+            "historical_defects": historical_defect_list[-8:],   # ← real defect rates
             "status": "AI Prediction Success"
         })
 
@@ -627,11 +677,11 @@ def upload_image():
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
-    if detector_model is None or classifier_model is None:
+    if segmenter_model is None or classifier_model is None or gate_model is None:
         return jsonify({
             "error": "Vision models not loaded. "
-                     "Make sure best_detector.pt and best_classifier.pth "
-                     "are in the same folder as app.py."
+                     "Make sure best_segmenter.pt, best_classifier.pth and "
+                     "shape_gate.joblib are in the same folder as app.py."
         }), 503
 
     try:
@@ -643,22 +693,26 @@ def upload_image():
         img_h, img_w = img.shape[:2]
         annotated   = img.copy()
 
-        # ── 2. Stage 1 — Detector finds all tablets ──────────────
-        det_results = detector_model(img, conf=DET_CONF, verbose=False)[0]
-        boxes       = det_results.boxes.xyxy.cpu().numpy()   # (N, 4)
-        det_confs   = det_results.boxes.conf.cpu().numpy()   # (N,)
+        # ── 2. Stage 1 — segmenter finds + outlines every tablea ──
+        res       = segmenter_model(img, conf=DET_CONF, iou=DET_IOU,
+                                    agnostic_nms=True, max_det=MAX_DET,
+                                    retina_masks=True, verbose=False)[0]
+        boxes     = res.boxes.xyxy.cpu().numpy()    # (N, 4)
+        det_confs = res.boxes.conf.cpu().numpy()    # (N,)
+        polys     = res.masks.xy if res.masks is not None else []   # list of polygons
 
         counts      = {"good": 0, "fat_bloom": 0, "crack": 0,
                        "defect": 0, "uncertain": 0}
         detections  = []   # detailed per-tablet results for frontend
 
-        # ── 3. Stage 2 — EfficientNet classifies each crop ───────
+        # ── 3. Stage 2 — SHAPE-GATE (geometry) → else EfficientNet ──
         for i, (box, det_score) in enumerate(zip(boxes, det_confs)):
             x1, y1, x2, y2 = map(int, box[:4])
+            poly = polys[i] if i < len(polys) else None
 
-            # 5% padding — matches training crop extraction exactly
-            pw  = int((x2 - x1) * 0.05)
-            ph  = int((y2 - y1) * 0.05)
+            # 12% padding — matches training crop extraction
+            pw  = int((x2 - x1) * CROP_PAD)
+            ph  = int((y2 - y1) * CROP_PAD)
             cx1 = max(0,     x1 - pw)
             cy1 = max(0,     y1 - ph)
             cx2 = min(img_w, x2 + pw)
@@ -668,40 +722,32 @@ def upload_image():
             if crop.size == 0 or (cx2 - cx1) < 10 or (cy2 - cy1) < 10:
                 continue
 
-            # RGB conversion + inference transform
-            rgb    = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            tensor = clf_tf(rgb).unsqueeze(0).to(DEVICE)
-
+            # always compute CNN probabilities (for all_probs + Good/Bloom call)
             with torch.no_grad():
-                probs = F.softmax(classifier_model(tensor), dim=1).squeeze(0)
+                probs = F.softmax(classifier_model(clf_preprocess(crop)), dim=1).squeeze(0)
 
-            clf_score, pred_idx = probs.max(0)
-            clf_score   = clf_score.item()
-            class_label = clf_names[pred_idx.item()]
-            class_key   = class_label.lower().strip()
+            # ── HYBRID DECISION ───────────────────────────────────
+            # (1) shape-gate first: a BROKEN outline ⇒ Cracked, regardless of
+            #     lighting/background. (2) otherwise the CNN decides.
+            via          = "cnn"
+            gate_cracked = False
+            if poly is not None and len(poly) >= 3:
+                try:
+                    gate_cracked = bool(gate_model.predict([shape_feats(smooth_poly(poly))])[0] == 1)
+                except Exception:
+                    gate_cracked = False
 
-            # ── Cracked conservatism ──────────────────────────────
-            # The model tends to over-predict Cracked, sometimes
-            # labeling Good tablets as Cracked. Require Cracked to
-            # win clearly before accepting it — otherwise fall back
-            # to the next most likely class.
-            cracked_idx = clf_names.index('Cracked')
-            good_idx    = clf_names.index('Good')
-            cracked_prob = probs[cracked_idx].item()
-            good_prob    = probs[good_idx].item()
-
-            if class_key == "cracked":
-                # If Cracked is not strongly confident AND Good is close behind,
-                # prefer Good instead (reduces false cracks).
-                if cracked_prob < 0.65 and good_prob > (cracked_prob - 0.20):
-                    class_label = 'Good'
-                    class_key   = 'good'
-                    clf_score   = good_prob
-
-            # Low-confidence → mark as uncertain
-            if clf_score < CLF_CONF:
-                class_key   = "uncertain"
-                class_label = "Uncertain"
+            if gate_cracked:
+                class_label, class_key, clf_score, via = "Cracked", "cracked", 1.0, "shape"
+            else:
+                s, pred_idx = probs.max(0)
+                clf_score   = float(s)
+                class_label = clf_names[pred_idx.item()]
+                class_key   = class_label.lower().strip()
+                # Low-confidence → mark as uncertain
+                if clf_score < CLF_CONF:
+                    class_key   = "uncertain"
+                    class_label = "Uncertain"
 
             # ── Update counts ─────────────────────────────────────
             if class_key == "good":
@@ -719,8 +765,8 @@ def upload_image():
             box_thickness = max(2, int(min(img_w, img_h) / 300))
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, box_thickness)
 
-            # Label background + text
-            display_label = f"#{i+1} {class_label} {clf_score:.0%}"
+            # Label background + text (shape-gated boxes show no % — it's a hard rule)
+            display_label = f"#{i+1} {class_label}" + ("" if via == "shape" else f" {clf_score:.0%}")
             font_scale    = max(0.4, min(0.7, (x2 - x1) / 250))
             (tw, th), _   = cv2.getTextSize(
                 display_label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
@@ -741,6 +787,7 @@ def upload_image():
                 "class":      class_label,
                 "confidence": round(clf_score, 3),
                 "det_conf":   round(float(det_score), 3),
+                "via":        via,                       # "shape" or "cnn"
                 "box":        [x1, y1, x2, y2],
                 "all_probs":  {
                     c: round(float(p), 3)
@@ -748,8 +795,43 @@ def upload_image():
                 },
             })
 
-        # ── 4. Summary panel overlay ──────────────────────────────
+        # ── 3b. Sanity guard: does this look like a tray of tablea? ──
+        # Catches non-tablea photos (faces, hands, random objects) that a
+        # one-class segmenter would otherwise box and the CNN would label "Good".
+        # Returns HTTP 200 (not 422) with the normal shape so the frontend's
+        # success path stops the "Analyzing..." spinner and shows the message.
+        def _not_a_tray(message):
+            ann = img.copy()
+            ov  = ann.copy()
+            cv2.rectangle(ov, (0, 0), (img_w, 76), (20, 20, 20), -1)
+            ann = cv2.addWeighted(ov, 0.6, ann, 0.4, 0)
+            cv2.putText(ann, "No tray of tablea detected", (20, 34),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (60, 60, 235), 2, cv2.LINE_AA)
+            cv2.putText(ann, message[:70], (20, 62),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            _, buf = cv2.imencode('.jpg', ann, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            return jsonify({
+                "image":      base64.b64encode(buf).decode('utf-8'),
+                "counts":     {"good": 0, "fat_bloom": 0, "crack": 0, "defect": 0, "uncertain": 0},
+                "total":      0,
+                "detections": [],
+                "rejected":   True,        # frontend can show a toast if it wants
+                "message":    message,
+            })
+
         total = len(detections)
+        if total < MIN_TABLEA:
+            return _not_a_tray(
+                f"Only {total} tablea-like object(s) found — scan a full tray, top-down.")
+
+        areas = [ (d["box"][2]-d["box"][0]) * (d["box"][3]-d["box"][1]) for d in detections ]
+        mean_a = float(np.mean(areas)) if areas else 0.0
+        size_cv = float(np.std(areas) / mean_a) if mean_a > 0 else 0.0
+        if size_cv > SIZE_CV_MAX:
+            return _not_a_tray(
+                "Objects vary too much in size to be a uniform tray of tablea.")
+
+        # ── 4. Summary panel overlay ──────────────────────────────
         lines = [
             f"Total : {total}",
             f"Good  : {counts['good']}",
@@ -795,6 +877,14 @@ def upload_image():
         import traceback
         return jsonify({"error": str(e),
                         "trace": traceback.format_exc()}), 500
+
+@app.route('/api/delete_week/<int:record_id>', methods=['POST'])
+@login_required
+def delete_week(record_id):
+    record = ProductionHistory.query.get_or_404(record_id)
+    db.session.delete(record)
+    db.session.commit()
+    return redirect(url_for('logs'))
 
 @app.route('/api/confirm_scan', methods=['POST'])
 @login_required
